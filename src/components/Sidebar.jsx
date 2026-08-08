@@ -53,9 +53,15 @@ export default function Sidebar({
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
+  const cleanId = (val) => (val ? val.toString().replace(/^[atp]/i, '').toLowerCase() : '');
+
   // Derive active team object from 1:1 synchronized teams array
   const activeTeamObj = teams.find(
-    t => t.id === currentUser?.team_id || t.name === currentUser?.team_name || t.name === selectedTeam?.name
+    t => (
+      (t.id && currentUser?.team_id && cleanId(t.id) === cleanId(currentUser?.team_id)) ||
+      (t.name && currentUser?.team_name && t.name.toLowerCase().replace(" team's", "").includes(currentUser?.team_name.toLowerCase().replace(" team's", ""))) ||
+      (t.name && currentUser?.team_name && currentUser?.team_name.toLowerCase().replace(" team's", "").includes(t.name.toLowerCase().replace(" team's", "")))
+    )
   ) || selectedTeam || teams[0];
 
   return (

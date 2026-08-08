@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Bell, User, Key, Check, Copy, Moon, Sun, Save, Lock, Users, Layers, Settings as GearIcon, Plus, Trash2, Edit2, AlertCircle } from 'lucide-react';
-import { apiProfiles, apiTeams } from '../../lib/supabase';
+import { apiProfiles, apiTeams, setUserTeamMap, getUserTeamMap } from '../../lib/supabase';
 
 export default function SettingsView({ currentUser, onUpdateUserProfile }) {
   const isAdmin = (currentUser?.role || currentUser?.user_metadata?.role || '').toLowerCase() === 'admin';
@@ -26,24 +26,30 @@ export default function SettingsView({ currentUser, onUpdateUserProfile }) {
 
   // ADMIN TEAMS STATE (Synchronized 1:1)
   const initialTeams = [
-    { id: 't1111111-1111-1111-1111-111111111111', name: "Marketing Team's", badge: 'M', description: 'Digital marketing & growth funnels' },
-    { id: 't2222222-2222-2222-2222-222222222222', name: "Design Team's", badge: 'D', description: 'UI/UX design systems & branding' },
-    { id: 't3333333-3333-3333-3333-333333333333', name: "Production Team's", badge: 'P', description: 'Server infrastructure & devops' },
-    { id: 't4444444-4444-4444-4444-444444444444', name: "Development Team's", badge: 'DEV', description: 'Fullstack web & mobile app engineering' },
-    { id: 't5555555-5555-5555-5555-555555555555', name: "Operations Team's", badge: 'OPS', description: 'Operations, logistics & support' },
+    { id: '11111111-1111-1111-1111-111111111111', name: "Marketing Team's", badge: 'M', description: 'Digital marketing & growth funnels' },
+    { id: '22222222-2222-2222-2222-222222222222', name: "Design Team's", badge: 'D', description: 'UI/UX design systems & branding' },
+    { id: '33333333-3333-3333-3333-333333333333', name: "Production Team's", badge: 'P', description: 'Server infrastructure & devops' },
+    { id: '44444444-4444-4444-4444-444444444444', name: "Development Team's", badge: 'DEV', description: 'Fullstack web & mobile app engineering' },
+    { id: '55555555-5555-5555-5555-555555555555', name: "Operations Team's", badge: 'OPS', description: 'Operations, logistics & support' },
   ];
 
   const [teamsList, setTeamsList] = useState(initialTeams);
 
   // ADMIN USER MANAGEMENT STATE (Database Driven)
   const initialUsers = [
-    { id: 'p0000000-0000-0000-0000-000000000000', user_id: '00000000-0000-0000-0000-000000000000', full_name: 'System Admin', email: 'admin@gmail.com', role: 'admin', team_id: null, team_name: 'System Admin' },
-    { id: 'p1111111-1111-1111-1111-111111111111', user_id: '11111111-1111-1111-1111-111111111111', full_name: 'John Doe', email: 'john.d@company.com', role: 'user', team_id: 't2222222-2222-2222-2222-222222222222', team_name: "Design Team's" },
-    { id: 'p2222222-2222-2222-2222-222222222222', user_id: '22222222-2222-2222-2222-222222222222', full_name: 'Sarah Connor', email: 'sarah@acme.org', role: 'user', team_id: 't1111111-1111-1111-1111-111111111111', team_name: "Marketing Team's" },
-    { id: 'p3333333-3333-3333-3333-333333333333', user_id: '33333333-3333-3333-3333-333333333333', full_name: 'Alex Rivera', email: 'alex@techlabs.io', role: 'user', team_id: 't3333333-3333-3333-3333-333333333333', team_name: "Production Team's" },
+    { id: '00000000-0000-0000-0000-000000000000', user_id: '00000000-0000-0000-0000-000000000000', full_name: 'System Admin', email: 'admin@gmail.com', role: 'admin', team_id: null, team_name: 'System Admin' },
+    { id: '11111111-1111-1111-1111-111111111111', user_id: '11111111-1111-1111-1111-111111111111', full_name: 'John Doe', email: 'john.d@company.com', role: 'user', team_id: '22222222-2222-2222-2222-222222222222', team_name: "Design Team's" },
+    { id: '22222222-2222-2222-2222-222222222222', user_id: '22222222-2222-2222-2222-222222222222', full_name: 'Sarah Connor', email: 'sarah@acme.org', role: 'user', team_id: '11111111-1111-1111-1111-111111111111', team_name: "Marketing Team's" },
+    { id: '33333333-3333-3333-3333-333333333333', user_id: '33333333-3333-3333-3333-333333333333', full_name: 'Alex Rivera', email: 'alex@techlabs.io', role: 'user', team_id: '33333333-3333-3333-3333-333333333333', team_name: "Production Team's" },
   ];
 
-  const [usersList, setUsersList] = useState(initialUsers);
+  const [usersList, setUsersList] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('crm_user_list_cache');
+      if (saved && saved.startsWith('[')) return JSON.parse(saved);
+    } catch (e) {}
+    return initialUsers;
+  });
 
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamDesc, setNewTeamDesc] = useState('');
@@ -72,7 +78,11 @@ export default function SettingsView({ currentUser, onUpdateUserProfile }) {
 
   // ADMIN ACTION: Change Role (Triggers Real-Time Auto-Update)
   const handleChangeRole = (targetUserId, newRole) => {
-    setUsersList(prev => prev.map(u => (u.id === targetUserId || u.user_id === targetUserId) ? { ...u, role: newRole } : u));
+    setUsersList(prev => {
+      const updated = prev.map(u => (u.id === targetUserId || u.user_id === targetUserId) ? { ...u, role: newRole } : u);
+      try { sessionStorage.setItem('crm_user_list_cache', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
 
     if (onUpdateUserProfile) {
       onUpdateUserProfile({
@@ -90,20 +100,30 @@ export default function SettingsView({ currentUser, onUpdateUserProfile }) {
   const handleChangeUserTeam = (targetUserId, newTeamId) => {
     const foundTeam = teamsList.find(t => t.id === newTeamId);
     const updatedTeamName = foundTeam?.name || 'Unassigned';
+    const targetUserObj = usersList.find(u => u.id === targetUserId || u.user_id === targetUserId);
+    const targetEmail = targetUserObj?.email || null;
 
-    // 1. Update local usersList
-    setUsersList(prev => prev.map(u => (u.id === targetUserId || u.user_id === targetUserId) ? { ...u, team_id: newTeamId, team_name: updatedTeamName } : u));
+    // 1. Update global user team map
+    setUserTeamMap(targetUserId, targetEmail, { team_id: newTeamId, team_name: updatedTeamName });
 
-    // 2. Notify parent App component to update logged-in session & active sidebar team
+    // 2. Update local usersList & cache
+    setUsersList(prev => {
+      const updated = prev.map(u => (u.id === targetUserId || u.user_id === targetUserId) ? { ...u, team_id: newTeamId, team_name: updatedTeamName } : u);
+      try { sessionStorage.setItem('crm_user_list_cache', JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
+
+    // 3. Notify parent App component to update logged-in session & active sidebar team
     if (onUpdateUserProfile) {
       onUpdateUserProfile({
         userId: targetUserId,
+        userEmail: targetEmail,
         team_id: newTeamId,
         team_name: updatedTeamName
       });
     }
 
-    // 3. Asynchronously call backend service
+    // 4. Asynchronously call backend service
     apiProfiles.updateTeam(targetUserId, newTeamId).catch(err => {
       console.warn("apiProfiles.updateTeam background error:", err);
     });
@@ -163,7 +183,8 @@ export default function SettingsView({ currentUser, onUpdateUserProfile }) {
   };
 
   // User's assigned team name display (1:1 synced)
-  const userTeamName = currentUser?.team_name || (teamsList.find(t => t.id === currentUser?.team_id)?.name) || "Marketing Team's";
+  const assignedTeamInfo = getUserTeamMap(currentUser?.id || currentUser?.user_id, currentUser?.email);
+  const userTeamName = currentUser?.team_name || (teamsList.find(t => t.id === (currentUser?.team_id || assignedTeamInfo?.team_id))?.name) || assignedTeamInfo?.team_name || "Design Team's";
 
   return (
     <div className="space-y-6 pb-12 max-w-5xl font-sans">

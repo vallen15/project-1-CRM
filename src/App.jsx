@@ -64,9 +64,25 @@ export default function App() {
     job_title: 'System Administrator'
   };
 
-  // Authentication State (Native Supabase Auth Session)
-  const [currentUser, setCurrentUser] = useState(defaultAdminUser);
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const getInitialUser = () => {
+    try {
+      const saved = sessionStorage.getItem('crm_session_user');
+      if (saved && saved.startsWith('{')) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {}
+    return defaultAdminUser;
+  };
+
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState(getInitialUser);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    try {
+      return sessionStorage.getItem('crm_is_authenticated') !== 'false';
+    } catch (e) {
+      return true;
+    }
+  });
 
   // UI Preference States (Stored in Supabase user_preferences table)
   const [activeTab, setActiveTabState] = useState('dashboard');
@@ -103,9 +119,6 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         syncUserSessionAndPreferences(session.user);
-      } else if (_event === 'SIGNED_OUT') {
-        setIsAuthenticated(false);
-        setCurrentUser(null);
       }
     });
 
@@ -131,6 +144,10 @@ export default function App() {
 
       setCurrentUser(userObj);
       setIsAuthenticated(true);
+      try {
+        sessionStorage.setItem('crm_session_user', JSON.stringify(userObj));
+        sessionStorage.setItem('crm_is_authenticated', 'true');
+      } catch (e) {}
 
       // Load user preferences live from Supabase user_preferences table
       const prefs = await preferenceService.getPreferences(authUser.id);
@@ -251,6 +268,10 @@ export default function App() {
   const handleLoginSuccess = async (user) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
+    try {
+      sessionStorage.setItem('crm_session_user', JSON.stringify(user));
+      sessionStorage.setItem('crm_is_authenticated', 'true');
+    } catch (e) {}
 
     if (user.team_name) {
       const found = dashboardData.teams.find(t => t.name === user.team_name || t.id === user.team_id);
@@ -271,21 +292,39 @@ export default function App() {
   const handleLogout = async () => {
     setIsAuthenticated(false);
     setCurrentUser(null);
+    try {
+      sessionStorage.removeItem('crm_session_user');
+      sessionStorage.setItem('crm_is_authenticated', 'false');
+    } catch (e) {}
     if (supabaseStatus.isConfigured) {
       await apiAuth.signOut();
     }
   };
 
   const handleUpdateUserProfile = async (updatedFields) => {
-    const nextUser = { ...currentUser, ...updatedFields };
-    setCurrentUser(nextUser);
+    const targetId = updatedFields.userId || currentUser?.id;
+    const targetEmail = updatedFields.userEmail || null;
+    const isCurrentActiveUser = (
+      !updatedFields.userId ||
+      targetId === currentUser?.id ||
+      targetId === currentUser?.user_id ||
+      (targetEmail && currentUser?.email && targetEmail.toLowerCase() === currentUser.email.toLowerCase())
+    );
 
-    if (supabaseStatus.isConfigured && currentUser?.id) {
+    if (isCurrentActiveUser) {
+      const nextUser = { ...currentUser, ...updatedFields };
+      setCurrentUser(nextUser);
+      try {
+        sessionStorage.setItem('crm_session_user', JSON.stringify(nextUser));
+      } catch (e) {}
+    }
+
+    if (supabaseStatus.isConfigured && targetId) {
       if (updatedFields.role) {
-        await apiAuth.updateProfileRole(currentUser.id, updatedFields.role);
+        await apiProfiles.updateRole(targetId, updatedFields.role);
       }
-      if (updatedFields.team_id) {
-        await apiAuth.updateProfileTeam(currentUser.id, updatedFields.team_id);
+      if (updatedFields.team_id !== undefined) {
+        await apiProfiles.updateTeam(targetId, updatedFields.team_id);
       }
     }
   };

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, User, ArrowRight, ShieldCheck, Database, CheckCircle2, AlertCircle, Shield } from 'lucide-react';
-import { apiAuth, getSupabaseStatus } from '../../lib/supabase';
+import { apiAuth, getSupabaseStatus, getUserTeamMap } from '../../lib/supabase';
 
 export default function LoginView({ onLoginSuccess, onOpenSupabaseModal }) {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -53,16 +53,21 @@ export default function LoginView({ onLoginSuccess, onOpenSupabaseModal }) {
         }, 1000);
       } else {
         const res = await apiAuth.signIn(email, password);
+        const isAdmin = email.toLowerCase().includes('admin');
+        const userId = res.profile?.user_id || res.user?.id || (isAdmin ? '00000000-0000-0000-0000-000000000000' : '11111111-1111-1111-1111-111111111111');
+        const userEmail = res.profile?.email || res.user?.email || email;
+        const teamInfo = getUserTeamMap(userId, userEmail);
+
         const loggedInUser = {
-          id: res.profile?.id || res.user?.id,
-          user_id: res.profile?.user_id || res.user?.id,
-          email: res.profile?.email || res.user?.email || email,
-          full_name: res.profile?.full_name || res.user?.user_metadata?.full_name || (email.startsWith('admin') ? 'System Admin' : 'John Doe'),
-          role: res.profile?.role || (email.toLowerCase().includes('admin') ? 'admin' : 'user'),
-          team_id: res.profile?.team_id || null,
-          team_name: res.profile?.team_name || null,
-          job_title: res.profile?.job_title || (email.toLowerCase().includes('admin') ? 'System Administrator' : 'Team Member'),
-          user_metadata: { full_name: res.profile?.full_name || 'User', role: res.profile?.role || 'user' }
+          id: res.profile?.id || res.user?.id || (isAdmin ? '00000000-0000-0000-0000-000000000000' : '11111111-1111-1111-1111-111111111111'),
+          user_id: userId,
+          email: userEmail,
+          full_name: res.profile?.full_name || res.user?.user_metadata?.full_name || (isAdmin ? 'System Admin' : 'John Doe'),
+          role: res.profile?.role || (isAdmin ? 'admin' : 'user'),
+          team_id: res.profile?.team_id || teamInfo.team_id,
+          team_name: res.profile?.team_name || teamInfo.team_name,
+          job_title: res.profile?.job_title || (isAdmin ? 'System Administrator' : 'Product Designer'),
+          user_metadata: { full_name: res.profile?.full_name || 'User', role: res.profile?.role || (isAdmin ? 'admin' : 'user') }
         };
         onLoginSuccess(loggedInUser);
       }
@@ -81,15 +86,20 @@ export default function LoginView({ onLoginSuccess, onOpenSupabaseModal }) {
     setErrorMsg('');
     try {
       const res = await apiAuth.signIn(quickEmail, quickPassword);
+      const isAdmin = quickEmail.toLowerCase().includes('admin');
+      const userId = res.profile?.user_id || res.user?.id || (isAdmin ? '00000000-0000-0000-0000-000000000000' : '11111111-1111-1111-1111-111111111111');
+      const userEmail = res.profile?.email || res.user?.email || quickEmail;
+      const teamInfo = getUserTeamMap(userId, userEmail);
+
       onLoginSuccess({
-        id: res.profile?.id || res.user?.id,
-        user_id: res.profile?.user_id || res.user?.id,
-        email: res.profile?.email || res.user?.email || quickEmail,
-        full_name: res.profile?.full_name || res.user?.user_metadata?.full_name || quickEmail.split('@')[0],
-        role: res.profile?.role || 'user',
-        team_id: res.profile?.team_id || null,
-        team_name: res.profile?.team_name || null,
-        job_title: res.profile?.job_title || 'Team Member'
+        id: res.profile?.id || res.user?.id || (isAdmin ? '00000000-0000-0000-0000-000000000000' : '11111111-1111-1111-1111-111111111111'),
+        user_id: userId,
+        email: userEmail,
+        full_name: res.profile?.full_name || res.user?.user_metadata?.full_name || (isAdmin ? 'System Admin' : 'John Doe'),
+        role: res.profile?.role || (isAdmin ? 'admin' : 'user'),
+        team_id: res.profile?.team_id || teamInfo.team_id,
+        team_name: res.profile?.team_name || teamInfo.team_name,
+        job_title: res.profile?.job_title || (isAdmin ? 'System Administrator' : 'Product Designer')
       });
     } catch (err) {
       setErrorMsg(err.message || 'Authentication failed.');
