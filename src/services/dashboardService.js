@@ -16,11 +16,10 @@ export const dashboardService = {
       const validExpenses = expenses || [];
       const validRevenues = revenues || [];
 
-      // 1. Task Progress Aggregation (435/500 = 64% target matching reference layout)
+      // 1. Task Metrics 100% Dynamic Aggregation from Supabase Tasks Database
       const completedTasksCount = validTasks.filter(t => t.status === 'Completed' || t.status === 'Done').length;
-      const totalTasksCount = Math.max(validTasks.length, 500);
-      const displayCompleted = completedTasksCount > 0 ? completedTasksCount : 435;
-      const taskProgressPercentage = 64; // Exact reference visual benchmark percentage
+      const totalTasksCount = validTasks.length;
+      const taskProgressPercentage = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
 
       // 2. Highlighted Company Selection
       const featuredCompany = validCompanies.find(c => c.is_featured || c.status === 'Featured') || validCompanies[0] || {
@@ -32,44 +31,42 @@ export const dashboardService = {
 
       // 3. Financial Totals Aggregation
       const sumExpenses = validExpenses.reduce((acc, e) => acc + (parseFloat(e.amount) || 0), 0);
-      const monthlyExpenseAmount = sumExpenses > 0 && sumExpenses < 100000 ? sumExpenses : 8414;
+      const monthlyExpenseAmount = sumExpenses > 0 ? sumExpenses : 8414;
 
       const sumRevenues = validRevenues.reduce((acc, r) => acc + (parseFloat(r.amount) || 0), 0);
-      const totalRevenueK = sumRevenues > 0 ? Math.round(sumRevenues / 1000) : 56123;
+      const totalRevenueK = sumRevenues > 0 ? Math.round(sumRevenues / 1000) : 56;
 
       // 4. Expenses Allocation Categories
       const categoriesMap = {
-        Production: 10000,
-        Marketing: 18000,
-        Operational: 25000,
-        Design: 32000
+        Production: 0,
+        Marketing: 0,
+        Operational: 0,
+        Design: 0
       };
 
       validExpenses.forEach(e => {
         let cat = 'Operational';
-        if (e.category_id === 'e1111111-1111-1111-1111-111111111111') cat = 'Production';
-        else if (e.category_id === 'e2222222-2222-2222-2222-222222222222') cat = 'Marketing';
-        else if (e.category_id === 'e3333333-3333-3333-3333-333333333333') cat = 'Operational';
-        else if (e.category_id === 'e4444444-4444-4444-4444-444444444444') cat = 'Design';
+        if (e.category_id === 'e1111111-1111-1111-1111-111111111111' || (e.category && e.category.includes('Prod'))) cat = 'Production';
+        else if (e.category_id === 'e2222222-2222-2222-2222-222222222222' || (e.category && e.category.includes('Mark'))) cat = 'Marketing';
+        else if (e.category_id === 'e3333333-3333-3333-3333-333333333333' || (e.category && e.category.includes('Oper'))) cat = 'Operational';
+        else if (e.category_id === 'e4444444-4444-4444-4444-444444444444' || (e.category && e.category.includes('Desi'))) cat = 'Design';
 
         const amt = parseFloat(e.amount) || 0;
-        if (amt > 1000) {
-          categoriesMap[cat] += Math.round(amt / 1000);
-        }
+        categoriesMap[cat] += Math.round(amt);
       });
 
       const categoriesList = Object.keys(categoriesMap).map(key => ({
         name: key,
         value: categoriesMap[key],
-        max: 40000
+        max: Math.max(...Object.values(categoriesMap), 40000)
       }));
 
-      const totalAllocationK = 44171;
+      const totalAllocationK = Math.round(monthlyExpenseAmount / 1000);
 
       return {
         ...initialDashboardData,
         taskProgress: {
-          completed: displayCompleted,
+          completed: completedTasksCount,
           total: totalTasksCount,
           percentage: taskProgressPercentage,
           month: 'This Month',
@@ -90,11 +87,11 @@ export const dashboardService = {
         },
         averageFinishedTask: {
           ...initialDashboardData.averageFinishedTask,
-          average: `± 52 Task`
+          average: `± ${completedTasksCount} Task`
         },
         taskSummaries: {
           ...initialDashboardData.taskSummaries,
-          totalTasks: `126 Task`
+          totalTasks: `${totalTasksCount} Task`
         },
         highlightedCompany: {
           name: featuredCompany.name,
@@ -114,7 +111,7 @@ export const dashboardService = {
           amountFormatted: `$${totalAllocationK.toLocaleString()}k`,
           categories: categoriesList
         },
-        completedTasksCount: 44
+        completedTasksCount: completedTasksCount
       };
 
     } catch (err) {

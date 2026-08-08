@@ -400,6 +400,14 @@ export default function App() {
           amount: sumExpenses,
           formatted: `$${Math.round(sumExpenses).toLocaleString()}`
         },
+        averageFinishedTask: {
+          ...prev.averageFinishedTask,
+          average: `± ${completedTasksCount} Task`
+        },
+        taskSummaries: {
+          ...prev.taskSummaries,
+          totalTasks: `${totalTasksCount} Task`
+        },
         totalRevenue: {
           ...prev.totalRevenue,
           amountFormatted: `$${totalRevK.toLocaleString()}k`

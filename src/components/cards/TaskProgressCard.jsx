@@ -2,7 +2,10 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 
 export default function TaskProgressCard({ data, onNavigateTasks }) {
-  const percentage = data?.percentage || 64;
+  const percentage = data?.percentage !== undefined && data?.percentage !== null ? data.percentage : 0;
+  const completed = data?.completed !== undefined && data?.completed !== null ? data.completed : 0;
+  const total = data?.total !== undefined && data?.total !== null ? data.total : 0;
+
   const circumference = 2 * Math.PI * 40; // ~251.3
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
@@ -43,7 +46,7 @@ export default function TaskProgressCard({ data, onNavigateTasks }) {
         <div>
           <span className="text-xs font-medium text-gray-500 block mb-1">Task Progress</span>
           <h3 className="text-2xl font-bold text-gray-900 tracking-tight">
-            {data?.completed || 435}/{data?.total || 500}
+            {completed}/{total}
           </h3>
           <span className="text-[11px] font-medium text-gray-400 mt-0.5 block">
             {data?.month || 'This Month'}

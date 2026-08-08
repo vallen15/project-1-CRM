@@ -8,23 +8,24 @@ export default function AverageFinishedTaskCard({ data, tasks = [] }) {
 
   // EXACT mathematical calculation from live tasks database
   const completedTasks = tasks.filter(t => t.status === 'Completed' || t.status === 'Done');
-  const totalCompletedCount = completedTasks.length;
+  const actualCompletedCount = completedTasks.length;
+
+  // Derive base completed count dynamically from tasks or data prop
+  const baseCount = data?.avgCount !== undefined ? data.avgCount : actualCompletedCount;
 
   // Exact period metric calculation
-  let count = totalCompletedCount;
+  let count = baseCount;
   let subtext = 'This Month';
 
   if (filter === 'Week') {
-    // Average completed per week or exact completed in active week
-    count = totalCompletedCount > 0 ? totalCompletedCount : 14;
+    count = baseCount;
     subtext = 'This Week';
   } else if (filter === 'Year') {
-    // Average completed per year
-    count = totalCompletedCount > 0 ? totalCompletedCount * 12 : 620;
+    count = baseCount * 12;
     subtext = 'This Year (Monthly Avg)';
   } else {
     // Default Month
-    count = totalCompletedCount > 0 ? totalCompletedCount : 52;
+    count = baseCount;
     subtext = 'This Month';
   }
 
