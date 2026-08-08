@@ -403,56 +403,28 @@ export default function SettingsView({ currentUser, onUpdateUserProfile }) {
 
       {/* SUBTAB 3: APPEARANCE */}
       {activeSubTab === 'appearance' && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-2xs space-y-4 font-sans">
+        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-2xs space-y-4">
           <div className="flex items-center gap-3 pb-3 border-b border-gray-100">
             <div className="p-2.5 rounded-xl bg-gray-100 text-black">
-              {darkMode ? <Moon className="w-5 h-5 text-indigo-600" /> : <Sun className="w-5 h-5 text-amber-500" />}
+              {darkMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900">Appearance & Theme Preferences</h3>
-              <p className="text-xs text-gray-500">Customize color theme mode, contrast, and workspace layout density</p>
+              <h3 className="text-sm font-bold text-gray-900">Appearance Preferences</h3>
+              <p className="text-xs text-gray-500">Customize color theme mode and interface spacing</p>
             </div>
           </div>
 
           <div className="space-y-3 text-xs">
-            {/* Dark Mode Toggle */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <div className="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl">
               <div>
-                <p className="font-bold text-gray-900 flex items-center gap-2">
-                  <span>Dark Mode Interface</span>
-                  {darkMode && <span className="bg-indigo-100 text-indigo-800 text-[10px] font-extrabold px-2 py-0.5 rounded">ACTIVE</span>}
-                </p>
-                <p className="text-[11px] text-gray-500 mt-0.5">Switch workspace color theme between Light Mode and Dark Mode</p>
+                <p className="font-bold text-gray-900">Dark Mode Interface</p>
+                <p className="text-[11px] text-gray-500">Switch workspace color theme to dark mode</p>
               </div>
               <input
                 type="checkbox"
                 checked={darkMode}
-                onChange={(e) => {
-                  const val = e.target.checked;
-                  setDarkMode(val);
-                  if (val) {
-                    document.documentElement.classList.add('dark');
-                    document.body.classList.add('dark');
-                  } else {
-                    document.documentElement.classList.remove('dark');
-                    document.body.classList.remove('dark');
-                  }
-                }}
-                className="w-5 h-5 accent-black rounded cursor-pointer"
-              />
-            </div>
-
-            {/* High Contrast Mode Toggle */}
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
-              <div>
-                <p className="font-bold text-gray-900">High Contrast Mode</p>
-                <p className="text-[11px] text-gray-500">Increase font weight and element borders for enhanced accessibility</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={highContrast}
-                onChange={(e) => setHighContrast(e.target.checked)}
-                className="w-5 h-5 accent-black rounded cursor-pointer"
+                onChange={(e) => setDarkMode(e.target.checked)}
+                className="w-4 h-4 accent-black rounded cursor-pointer"
               />
             </div>
           </div>

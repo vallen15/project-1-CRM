@@ -2,15 +2,15 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 
 export default function TaskProgressCard({ data, onNavigateTasks }) {
-  const percentage = data?.percentage !== undefined && data?.percentage !== null ? data.percentage : 0;
-  const completed = data?.completed !== undefined && data?.completed !== null ? data.completed : 0;
-  const total = data?.total !== undefined && data?.total !== null ? data.total : 0;
+  const percentage = data?.percentage !== undefined ? data.percentage : 0;
+  const completed = data?.completed !== undefined ? data.completed : 0;
+  const total = data?.total !== undefined ? data.total : 0;
 
   const circumference = 2 * Math.PI * 40; // ~251.3
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
   return (
-    <div className="bg-white rounded-xl p-5 border border-gray-200/80 shadow-2xs flex items-center justify-between">
+    <div className="bg-white rounded-xl p-5 border border-gray-200/80 shadow-2xs flex items-center justify-between font-sans">
       <div className="flex items-center gap-5">
         {/* Donut Progress Circle */}
         <div className="relative w-20 h-20 shrink-0 flex items-center justify-center">

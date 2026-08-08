@@ -25,10 +25,9 @@ const credentials = getSupabaseCredentials();
 
 export const supabase = createClient(credentials.url, credentials.anonKey, {
   auth: {
-    // Keep auth state only in memory.
-    persistSession: false,
-    autoRefreshToken: false,
-    detectSessionInUrl: false
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
   }
 });
 
@@ -50,216 +49,107 @@ export const pingSupabaseDatabase = async () => {
   }
 };
 
-// Realtime Channel Listener Helper
-export const subscribeToRealtimeChanges = (onPayload) => {
+// Realtime Database Channel Subscription Helper
+export const subscribeToRealtimeChanges = (onDataChanged) => {
   const status = getSupabaseStatus();
   if (!status.isConfigured) return null;
 
   try {
     const channel = supabase
-      .channel('schema-db-changes')
+      .channel('crm_realtime_sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public' },
         (payload) => {
-          if (onPayload) onPayload(payload);
+          if (onDataChanged) onDataChanged(payload);
         }
       )
       .subscribe();
+
     return channel;
   } catch (err) {
-    console.warn("Realtime subscription fallback:", err.message);
+    console.warn("Realtime subscription initialization error:", err.message);
     return null;
   }
 };
 
-// ========================================================
-// AUTHENTICATION & PROFILES AUTHORIZATION HELPERS
-// ========================================================
+// ================================================================
+// SUPABASE DATABASE API SERVICES
+// ================================================================
 
+// 1. AUTH & PROFILES API
 export const apiAuth = {
   signIn: async (email, password) => {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const status = getSupabaseStatus();
-
-    if (status.isConfigured) {
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password
-        });
-        if (!error && data.user) {
-          let profile = await apiProfiles.fetchCurrent(data.user.id);
-          if (!profile) {
-            profile = {
-              id: data.user.id,
-              user_id: data.user.id,
-              full_name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
-              email: cleanEmail,
-              role: cleanEmail.includes('admin') ? 'admin' : 'user',
-              team_id: null
-            };
-          }
-          return { user: data.user, profile };
-        }
-      } catch (e) {
-        console.warn("Supabase auth sign in fallback:", e.message);
-      }
-    }
-
-    // Direct Pre-Configured Accounts & Role Authorization Handler
-    if (cleanEmail === 'admin@gmail.com') {
-      const adminProfile = {
-        id: 'p0000000-0000-0000-0000-000000000000',
-        user_id: '00000000-0000-0000-0000-000000000000',
-        email: 'admin@gmail.com',
-        full_name: 'System Admin',
-        role: 'admin',
-        team_id: null,
-        team_name: null,
-        job_title: 'System Administrator'
-      };
-      return { user: adminProfile, profile: adminProfile };
-    }
-
-    if (cleanEmail === 'john.d@company.com') {
-      const johnProfile = {
-        id: 'p1111111-1111-1111-1111-111111111111',
-        user_id: '11111111-1111-1111-1111-111111111111',
-        email: 'john.d@company.com',
-        full_name: 'John Doe',
-        role: 'user',
-        team_id: 't2222222-2222-2222-2222-222222222222',
-        team_name: "Design Team's",
-        job_title: 'Lead Designer'
-      };
-      return { user: johnProfile, profile: johnProfile };
-    }
-
-    if (cleanEmail === 'sarah@acme.org') {
-      const sarahProfile = {
-        id: 'p2222222-2222-2222-2222-222222222222',
-        user_id: '22222222-2222-2222-2222-222222222222',
-        email: 'sarah@acme.org',
-        full_name: 'Sarah Connor',
-        role: 'user',
-        team_id: 't1111111-1111-1111-1111-111111111111',
-        team_name: "Marketing Team's",
-        job_title: 'Product Manager'
-      };
-      return { user: sarahProfile, profile: sarahProfile };
-    }
-
-    // Default registered user account fallback
-    const userRole = cleanEmail.includes('admin') ? 'admin' : 'user';
-    const genericUser = {
-      id: Date.now().toString(),
-      user_id: Date.now().toString(),
-      email: cleanEmail,
-      full_name: cleanEmail.split('@')[0].toUpperCase(),
-      role: userRole,
-      team_id: null,
-      team_name: null,
-      job_title: userRole === 'admin' ? 'System Administrator' : 'Team Member'
-    };
-    return { user: genericUser, profile: genericUser };
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
   },
-
-  signUp: async (email, password, fullName) => {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const status = getSupabaseStatus();
-
-    if (status.isConfigured) {
-      try {
-        const { data, error } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-          options: {
-            data: { full_name: fullName, role: 'user' }
-          }
-        });
-        if (!error && data?.user) return { user: data.user };
-      } catch (e) {
-        console.warn("Supabase auth signup fallback:", e.message);
-      }
-    }
-
-    const newUser = {
-      id: Date.now().toString(),
-      user_id: Date.now().toString(),
-      email: cleanEmail,
-      full_name: fullName,
-      role: 'user',
-      team_id: null,
-      team_name: null,
-      job_title: 'Team Member'
-    };
-    return { user: newUser };
+  signUp: async (email, password, metadata = {}) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: metadata }
+    });
+    if (error) throw error;
+    return data;
   },
-
   signOut: async () => {
-    const status = getSupabaseStatus();
-    if (status.isConfigured) {
-      try {
-        await supabase.auth.signOut();
-      } catch (e) {}
+    const { error } = await supabase.auth.signOut();
+    if (error) console.warn("SignOut notice:", error.message);
+  },
+  getUserProfile: async (userId) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*, teams(id, name)')
+      .eq('user_id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.warn("getUserProfile warning:", error.message);
     }
+    return data;
   },
-
-  restoreSession: async () => {
-    return null;
-  }
-};
-
-export const apiUserPreferences = {
-  fetch: async () => {
-    return null;
-  },
-
-  save: async (_userId, _preferences) => {
-    return null;
-  }
-};
-
-// ========================================================
-// PROFILES & TEAMS API HELPERS
-// ========================================================
-
-export const apiProfiles = {
-  fetchCurrent: async (userId) => {
-    try {
-      const { data, error } = await supabase.from('profiles').select('*, teams(id, name)').eq('user_id', userId).single();
-      if (error) return null;
-      return {
-        ...data,
-        team_name: data.teams?.name || null
-      };
-    } catch (e) {
-      return null;
-    }
-  },
-
-  fetchAll: async () => {
-    try {
-      const { data, error } = await supabase.from('profiles').select('*, teams(id, name)').order('created_at', { ascending: false });
-      if (error) throw error;
-      return data.map(p => ({
-        ...p,
-        team_name: p.teams?.name || null
-      }));
-    } catch (e) {
-      return [];
-    }
-  },
-
-  updateRole: async (profileId, newRole) => {
-    const { data, error } = await supabase.from('profiles').update({ role: newRole }).eq('id', profileId).select();
+  updateProfileRole: async (profileId, role) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ role, updated_at: new Date().toISOString() })
+      .eq('id', profileId)
+      .select();
     if (error) throw error;
     return data[0];
   },
+  updateProfileTeam: async (profileId, team_id) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ team_id, updated_at: new Date().toISOString() })
+      .eq('id', profileId)
+      .select();
+    if (error) throw error;
+    return data[0];
+  },
+  fetchAllProfiles: async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*, teams(id, name)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  }
+};
 
-  updateTeam: async (profileId, teamId) => {
-    const { data, error } = await supabase.from('profiles').update({ team_id: teamId }).eq('id', profileId).select();
+export const apiProfiles = {
+  fetchAll: async () => {
+    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+    if (error) return [];
+    return data || [];
+  },
+  updateRole: async (profileId, role) => {
+    const { data, error } = await supabase.from('profiles').update({ role }).eq('id', profileId).select();
+    if (error) throw error;
+    return data[0];
+  },
+  updateTeam: async (profileId, team_id) => {
+    const { data, error } = await supabase.from('profiles').update({ team_id }).eq('id', profileId).select();
     if (error) throw error;
     return data[0];
   }
@@ -267,63 +157,53 @@ export const apiProfiles = {
 
 export const apiTeams = {
   fetchAll: async () => {
-    try {
-      const { data, error } = await supabase.from('teams').select('*').order('name', { ascending: true });
-      if (error) throw error;
-      return data;
-    } catch (e) {
-      return [
-        { id: 't1111111-1111-1111-1111-111111111111', name: 'Marketing', description: 'Digital marketing & growth' },
-        { id: 't2222222-2222-2222-2222-222222222222', name: 'Design', description: 'UI/UX design systems' },
-        { id: 't3333333-3333-3333-3333-333333333333', name: 'Production', description: 'Infrastructure & devops' },
-        { id: 't4444444-4444-4444-4444-444444444444', name: 'Development', description: 'Fullstack engineering' },
-        { id: 't5555555-5555-5555-5555-555555555555', name: 'Operations', description: 'Operations & support' }
-      ];
-    }
+    const { data, error } = await supabase.from('teams').select('*').order('name', { ascending: true });
+    if (error) return [];
+    return data || [];
   },
-
-  create: async (teamData) => {
-    const { data, error } = await supabase.from('teams').insert([teamData]).select();
+  insert: async (team) => {
+    const { data, error } = await supabase.from('teams').insert([team]).select();
     if (error) throw error;
     return data[0];
   },
-
-  update: async (id, teamData) => {
-    const { data, error } = await supabase.from('teams').update(teamData).eq('id', id).select();
-    if (error) throw error;
-    return data[0];
-  },
-
   delete: async (id) => {
     const { error } = await supabase.from('teams').delete().eq('id', id);
     if (error) throw error;
   }
 };
 
-// ========================================================
-// ALL 12 MODULES DATABASE QUERY HELPERS
-// ========================================================
-
-// 1. TASKS API
-export const apiTasks = {
-  fetchAll: async () => {
-    const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
-    if (error) throw error;
-    return data;
+// USER PREFERENCES API (public.user_preferences)
+export const apiPreferences = {
+  getByUserId: async (userId) => {
+    if (!userId) return null;
+    const { data, error } = await supabase
+      .from('user_preferences')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    if (error && error.code !== 'PGRST116') {
+      console.warn("apiPreferences.getByUserId notice:", error.message);
+    }
+    return data || null;
   },
-  insert: async (task) => {
-    const { data, error } = await supabase.from('tasks').insert([task]).select();
-    if (error) throw error;
+  upsert: async (prefData) => {
+    if (!prefData.user_id) return null;
+    const payload = {
+      user_id: prefData.user_id,
+      ...(prefData.active_tab !== undefined && { active_tab: prefData.active_tab }),
+      ...(prefData.sidebar_collapsed !== undefined && { sidebar_collapsed: prefData.sidebar_collapsed }),
+      ...(prefData.email_folder !== undefined && { email_folder: prefData.email_folder }),
+      updated_at: new Date().toISOString()
+    };
+    const { data, error } = await supabase
+      .from('user_preferences')
+      .upsert(payload, { onConflict: 'user_id' })
+      .select();
+    if (error) {
+      console.warn("apiPreferences.upsert error:", error.message);
+      throw error;
+    }
     return data[0];
-  },
-  updateStatus: async (id, status) => {
-    const { data, error } = await supabase.from('tasks').update({ status }).eq('id', id).select();
-    if (error) throw error;
-    return data[0];
-  },
-  delete: async (id) => {
-    const { error } = await supabase.from('tasks').delete().eq('id', id);
-    if (error) throw error;
   }
 };
 
@@ -366,25 +246,18 @@ export const apiContacts = {
 // 4. COMPANIES API
 export const apiCompanies = {
   fetchAll: async () => {
-    const response = await fetch('/api/companies');
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Unable to load companies');
-    return data;
+    const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
   },
   insert: async (company) => {
-    const response = await fetch('/api/companies', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(company)
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Unable to create company');
+    const { data, error } = await supabase.from('companies').insert([company]).select();
+    if (error) throw error;
     return data[0];
   },
   update: async (id, companyData) => {
-    const response = await fetch(`/api/companies?id=${encodeURIComponent(id)}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(companyData)
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Unable to update company');
+    const { data, error } = await supabase.from('companies').update(companyData).eq('id', id).select();
+    if (error) throw error;
     return data[0];
   },
   setFeatured: async (id) => {
@@ -395,11 +268,8 @@ export const apiCompanies = {
     return apiCompanies.update(id, { is_featured: true, status: 'Featured' });
   },
   delete: async (id) => {
-    const response = await fetch(`/api/companies?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.message || 'Unable to delete company');
-    }
+    const { error } = await supabase.from('companies').delete().eq('id', id);
+    if (error) throw error;
   }
 };
 
@@ -411,7 +281,17 @@ export const apiNotifications = {
     return data;
   },
   insert: async (notification) => {
-    const { data, error } = await supabase.from('notifications').insert([notification]).select();
+    const isValidUuid = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const cleanNotification = {
+      type: notification.type || 'system',
+      title: notification.title,
+      message: notification.message,
+      is_read: notification.is_read || notification.read || false,
+      target_email: notification.target_email || null,
+      reference_type: notification.reference_type || null,
+      reference_id: notification.reference_id && isValidUuid(notification.reference_id) ? notification.reference_id : null
+    };
+    const { data, error } = await supabase.from('notifications').insert([cleanNotification]).select();
     if (error) throw error;
     return data[0];
   },
@@ -428,6 +308,15 @@ export const apiNotifications = {
   delete: async (id) => {
     const { error } = await supabase.from('notifications').delete().eq('id', id);
     if (error) throw error;
+  },
+  deleteByReference: async (referenceType, referenceId) => {
+    if (!referenceId) return;
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('reference_type', referenceType)
+      .eq('reference_id', referenceId);
+    if (error) console.warn("deleteByReference notice:", error.message);
   },
   clearAll: async () => {
     const { error } = await supabase.from('notifications').delete().neq('id', '00000000-0000-0000-0000-000000000000');
@@ -447,21 +336,39 @@ export const apiEmails = {
     if (error) throw error;
     return data[0];
   },
-  toggleStar: async (id, starred) => {
-    const { data, error } = await supabase.from('emails').update({ starred }).eq('id', id).select();
-    if (error) throw error;
-    return data[0];
-  },
   delete: async (id) => {
     const { error } = await supabase.from('emails').delete().eq('id', id);
     if (error) throw error;
   }
 };
 
-// 7. CALENDAR EVENTS API
-export const apiCalendarEvents = {
+// 7. TASKS API
+export const apiTasks = {
   fetchAll: async () => {
-    const { data, error } = await supabase.from('calendars').select('*').order('day_of_month', { ascending: true });
+    const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+  insert: async (task) => {
+    const { data, error } = await supabase.from('tasks').insert([task]).select();
+    if (error) throw error;
+    return data[0];
+  },
+  updateStatus: async (id, status) => {
+    const { data, error } = await supabase.from('tasks').update({ status, updated_at: new Date().toISOString() }).eq('id', id).select();
+    if (error) throw error;
+    return data[0];
+  },
+  delete: async (id) => {
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
+// 8. CALENDARS API
+export const apiCalendars = {
+  fetchAll: async () => {
+    const { data, error } = await supabase.from('calendars').select('*').order('event_date', { ascending: true });
     if (error) throw error;
     return data;
   },
@@ -476,7 +383,9 @@ export const apiCalendarEvents = {
   }
 };
 
-// 8. EXPENSES API
+export const apiCalendarEvents = apiCalendars;
+
+// 9. EXPENSES API
 export const apiExpenses = {
   fetchAll: async () => {
     const { data, error } = await supabase.from('expenses').select('*').order('amount', { ascending: false });
@@ -491,10 +400,14 @@ export const apiExpenses = {
   deleteByCompanyId: async (companyId) => {
     const { error } = await supabase.from('expenses').delete().eq('company_id', companyId);
     if (error) throw error;
+  },
+  delete: async (id) => {
+    const { error } = await supabase.from('expenses').delete().eq('id', id);
+    if (error) throw error;
   }
 };
 
-// 9. REVENUES API
+// 10. REVENUES API
 export const apiRevenues = {
   fetchAll: async () => {
     const { data, error } = await supabase.from('revenues').select('*').order('year', { ascending: true });
@@ -509,10 +422,14 @@ export const apiRevenues = {
   deleteByCompanyId: async (companyId) => {
     const { error } = await supabase.from('revenues').delete().eq('company_id', companyId);
     if (error) throw error;
+  },
+  delete: async (id) => {
+    const { error } = await supabase.from('revenues').delete().eq('id', id);
+    if (error) throw error;
   }
 };
 
-// 10. SETTINGS API
+// 11. SETTINGS API
 export const apiSettings = {
   get: async (key) => {
     const { data, error } = await supabase.from('settings').select('*').eq('key', key).single();
@@ -524,4 +441,39 @@ export const apiSettings = {
     if (error) throw error;
     return data[0];
   }
+};
+
+// 12. TRANSACTIONS API
+export const apiTransactions = {
+  fetchAll: async () => {
+    const { data, error } = await supabase.from('transactions').select('*').order('transaction_date', { ascending: false });
+    if (error) return [];
+    return data || [];
+  },
+  insert: async (tx) => {
+    const { data, error } = await supabase.from('transactions').insert([tx]).select();
+    if (error) throw error;
+    return data[0];
+  },
+  deleteByCompanyId: async (companyId) => {
+    const { error } = await supabase.from('transactions').delete().eq('company_id', companyId);
+    if (error) throw error;
+  }
+};
+
+// 13. MASTER PURGE DATABASE HELPER
+export const purgeAllCrmData = async () => {
+  const dummyUuid = '00000000-0000-0000-0000-000000000000';
+  await Promise.allSettled([
+    supabase.from('tasks').delete().neq('id', dummyUuid),
+    supabase.from('companies').delete().neq('id', dummyUuid),
+    supabase.from('contacts').delete().neq('id', dummyUuid),
+    supabase.from('emails').delete().neq('id', dummyUuid),
+    supabase.from('notifications').delete().neq('id', dummyUuid),
+    supabase.from('calendars').delete().neq('id', dummyUuid),
+    supabase.from('notes').delete().neq('id', dummyUuid),
+    supabase.from('revenues').delete().neq('id', dummyUuid),
+    supabase.from('expenses').delete().neq('id', dummyUuid),
+    supabase.from('transactions').delete().neq('id', dummyUuid)
+  ]);
 };

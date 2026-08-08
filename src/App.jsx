@@ -19,7 +19,7 @@ import SupabaseConfigModal from './components/SupabaseConfigModal';
 import HelpCenterModal from './components/HelpCenterModal';
 
 import { initialDashboardData, initialTaskList, initialNotesList, initialContactsList, initialCompanyList } from './lib/initialData';
-import { supabase, getSupabaseStatus, apiAuth, apiUserPreferences, subscribeToRealtimeChanges } from './lib/supabase';
+import { supabase, getSupabaseStatus, apiAuth, subscribeToRealtimeChanges } from './lib/supabase';
 
 import { taskService } from './services/taskService';
 import { companyService } from './services/companyService';
@@ -29,18 +29,49 @@ import { emailService } from './services/emailService';
 import { calendarService } from './services/calendarService';
 import { notificationService } from './services/notificationService';
 import { dashboardService } from './services/dashboardService';
+import { preferenceService } from './services/preferenceService';
 
 export default function App() {
-  // Authentication State with Role-Based Access Control Session
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Purge any legacy localStorage keys once on startup
+  useEffect(() => {
+    [
+      'dashboard_auth_user',
+      'dashboard_active_tab',
+      'dashboard_sidebar_collapsed',
+      'dashboard_email_folder',
+      'dashboard_db_tasks',
+      'dashboard_db_notes',
+      'dashboard_db_contacts',
+      'dashboard_db_companies',
+      'dashboard_db_emails',
+      'dashboard_db_notifications',
+      'dashboard_db_users',
+      'dashboard_db_teams'
+    ].forEach(k => {
+      try { localStorage.removeItem(k); } catch (e) {}
+    });
+  }, []);
 
-  // UI Preference States
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // Default Admin user object
+  const defaultAdminUser = {
+    id: 'p0000000-0000-0000-0000-000000000000',
+    user_id: '00000000-0000-0000-0000-000000000000',
+    email: 'admin@gmail.com',
+    full_name: 'System Admin',
+    role: 'admin',
+    team_id: null,
+    team_name: null,
+    job_title: 'System Administrator'
+  };
 
+  // Authentication State (Native Supabase Auth Session)
+  const [currentUser, setCurrentUser] = useState(defaultAdminUser);
+  const [isAuthenticated, setIsAuthenticated] = useState(true);
+
+  // UI Preference States (Stored in Supabase user_preferences table)
+  const [activeTab, setActiveTabState] = useState('dashboard');
+  const [isCollapsed, setIsCollapsedState] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState(initialDashboardData.teams[0]);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
   // DATABASE STATE ENGINE (Supabase Single Source of Truth)
   const [tasks, setTasks] = useState(initialTaskList);
@@ -57,58 +88,78 @@ export default function App() {
 
   const supabaseStatus = getSupabaseStatus();
 
-  // Restore the authenticated Supabase user from the server-managed HttpOnly cookie.
+  // NATIVE SUPABASE AUTH SESSION LISTENER
   useEffect(() => {
-    apiAuth.restoreSession()
-      .then((session) => {
-        if (!session) return;
-        const user = {
-          id: session.profile?.id || session.user.id,
-          user_id: session.profile?.user_id || session.user.id,
-          email: session.profile?.email || session.user.email,
-          full_name: session.profile?.full_name || session.user.user_metadata?.full_name || session.user.email,
-          role: session.profile?.role || 'user',
-          team_id: session.profile?.team_id || null,
-          team_name: session.profile?.team_name || null,
-          job_title: session.profile?.job_title || 'Team Member',
-          user_metadata: session.user.user_metadata
-        };
-        setCurrentUser(user);
-        setIsAuthenticated(true);
-      })
-      .catch((err) => console.warn('Unable to restore authenticated session:', err.message));
-  }, []);
+    if (!supabaseStatus.isConfigured) return;
 
-  // Load and save UI preferences through Supabase, never through browser storage.
-  useEffect(() => {
-    if (!currentUser) {
-      setPreferencesLoaded(false);
-      return;
+    // Load initial native Supabase Auth session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        syncUserSessionAndPreferences(session.user);
+      }
+    });
+
+    // Listen to native auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        syncUserSessionAndPreferences(session.user);
+      } else if (_event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, [supabaseStatus.isConfigured]);
+
+  // Helper to sync user profile and user_preferences from Supabase PostgreSQL
+  const syncUserSessionAndPreferences = async (authUser) => {
+    try {
+      const profile = await apiAuth.getUserProfile(authUser.id);
+      const userObj = {
+        id: profile?.id || authUser.id,
+        user_id: authUser.id,
+        email: authUser.email,
+        full_name: profile?.full_name || authUser.user_metadata?.full_name || authUser.email.split('@')[0],
+        role: (profile?.role || authUser.user_metadata?.role || 'admin').toLowerCase(),
+        team_id: profile?.team_id || null,
+        team_name: profile?.teams?.name || null,
+        job_title: profile?.job_title || 'Workspace User'
+      };
+
+      setCurrentUser(userObj);
+      setIsAuthenticated(true);
+
+      // Load user preferences live from Supabase user_preferences table
+      const prefs = await preferenceService.getPreferences(authUser.id);
+      if (prefs) {
+        if (prefs.active_tab) setActiveTabState(prefs.active_tab);
+        if (prefs.sidebar_collapsed !== undefined) setIsCollapsedState(Boolean(prefs.sidebar_collapsed));
+      }
+    } catch (err) {
+      console.warn("syncUserSessionAndPreferences notice:", err.message);
     }
+  };
 
-    let cancelled = false;
-    setPreferencesLoaded(false);
-    apiUserPreferences.fetch()
-      .then((preferences) => {
-        if (cancelled) return;
-        if (preferences?.active_tab) setActiveTab(preferences.active_tab);
-        if (typeof preferences?.sidebar_collapsed === 'boolean') setIsCollapsed(preferences.sidebar_collapsed);
-      })
-      .catch((err) => console.warn('Failed to load user preferences:', err.message))
-      .finally(() => {
-        if (!cancelled) setPreferencesLoaded(true);
-      });
+  // Synchronized Setter for Active Tab
+  const setActiveTab = (tabName) => {
+    setActiveTabState(tabName);
+    const targetUserId = currentUser?.user_id || currentUser?.id;
+    if (supabaseStatus.isConfigured && targetUserId && targetUserId.length > 20) {
+      preferenceService.updateActiveTab(targetUserId, tabName);
+    }
+  };
 
-    return () => { cancelled = true; };
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!preferencesLoaded || !currentUser) return;
-    apiUserPreferences.save(currentUser.user_id || currentUser.id, {
-      active_tab: activeTab,
-      sidebar_collapsed: isCollapsed
-    }).catch((err) => console.warn('Failed to save user preferences:', err.message));
-  }, [activeTab, isCollapsed, currentUser, preferencesLoaded]);
+  // Synchronized Setter for Sidebar Collapsed
+  const setIsCollapsed = (collapsedVal) => {
+    setIsCollapsedState(collapsedVal);
+    const targetUserId = currentUser?.user_id || currentUser?.id;
+    if (supabaseStatus.isConfigured && targetUserId && targetUserId.length > 20) {
+      preferenceService.updateSidebarCollapsed(targetUserId, Boolean(collapsedVal));
+    }
+  };
 
   // Re-calculate dashboard metrics whenever companies or tasks change
   useEffect(() => {
@@ -137,77 +188,67 @@ export default function App() {
     try {
       // 1. Fetch Tasks from Supabase PostgreSQL
       const dbTasks = await taskService.fetchAll();
-      if (dbTasks && dbTasks.length > 0) {
-        setTasks(dbTasks.map(t => ({
-          id: t.id,
-          title: t.title,
-          team: t.team || "Marketing Team's",
-          status: t.status ? (t.status === 'completed' || t.status === 'Done' ? 'Completed' : t.status === 'in_progress' || t.status === 'In Progress' ? 'In Progress' : 'Todo') : 'Todo',
-          date: t.due_date || t.created_at?.split('T')[0] || '2026-08-08',
-          company_id: t.company_id || null,
-          company: t.company || 'Product design'
-        })));
-      }
+      setTasks((dbTasks || []).map(t => ({
+        id: t.id,
+        title: t.title,
+        team: t.team || "Marketing",
+        status: t.status ? (t.status === 'completed' || t.status === 'Done' ? 'Completed' : t.status === 'in_progress' || t.status === 'In Progress' ? 'In Progress' : 'Todo') : 'Todo',
+        date: t.due_date || t.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+        company_id: t.company_id || null,
+        company: t.company || ''
+      })));
 
       // 2. Fetch Companies from Supabase PostgreSQL
       const dbCompanies = await companyService.fetchAll();
-      if (dbCompanies && dbCompanies.length > 0) {
-        setCompanies(dbCompanies.map(c => ({
-          id: c.id,
-          name: c.name,
-          category: c.category || 'Web Design',
-          transactions: c.total_transactions || '1,000',
-          revenue: c.revenue || '$15,000',
-          expenses: c.expenses || '$2,100',
-          status: c.status || 'Active',
-          is_featured: c.is_featured || false,
-          logo_bg: c.logo_bg || 'bg-black',
-          website: c.website || null,
-          email: c.email || null,
-          phone: c.phone || null,
-          address: c.address || null,
-          team_id: c.team_id || null,
-          created_by: c.created_by || null
-        })));
-      }
+      setCompanies((dbCompanies || []).map(c => ({
+        id: c.id,
+        name: c.name,
+        category: c.category || 'General',
+        transactions: c.total_transactions || '0',
+        status: c.status || 'Active',
+        is_featured: c.is_featured || false,
+        logo_bg: c.logo_bg || 'bg-black',
+        website: c.website || null,
+        email: c.email || null,
+        phone: c.phone || null,
+        address: c.address || null,
+        team_id: c.team_id || null,
+        created_by: c.created_by || null
+      })));
 
       // 3. Fetch Contacts from Supabase PostgreSQL
       const dbContacts = await contactService.fetchAll();
-      if (dbContacts && dbContacts.length > 0) {
-        setContacts(dbContacts.map(c => ({
-          id: c.id,
-          name: c.name,
-          email: c.email,
-          role: c.position || 'Member',
-          company: c.company_name || 'Partner',
-          company_id: c.company_id || null
-        })));
-      }
+      setContacts((dbContacts || []).map(c => ({
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        role: c.position || 'Member',
+        company: c.company_name || '',
+        company_id: c.company_id || null
+      })));
 
       // 4. Fetch Notes from Supabase PostgreSQL
       const dbNotes = await noteService.fetchAll();
-      if (dbNotes && dbNotes.length > 0) {
-        setNotes(dbNotes.map(n => ({
-          id: n.id,
-          title: n.title,
-          content: n.content,
-          date: n.created_at?.split('T')[0] || '2026-08-08'
-        })));
-      }
+      setNotes((dbNotes || []).map(n => ({
+        id: n.id,
+        title: n.title,
+        content: n.content,
+        date: n.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
+      })));
 
       // 5. Fetch Dashboard Aggregations from Supabase PostgreSQL
       const aggData = await dashboardService.fetchAggregatedMetrics();
       setDashboardData(aggData);
 
     } catch (err) {
-      console.warn("Supabase fetch fallback to local persistent store:", err.message);
+      console.warn("Supabase fetch fallback to local store:", err.message);
     } finally {
       setIsLoading(false);
     }
   };
 
   // Auth Handlers
-  const handleLoginSuccess = (user) => {
+  const handleLoginSuccess = async (user) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
 
@@ -215,147 +256,212 @@ export default function App() {
       const found = dashboardData.teams.find(t => t.name === user.team_name || t.id === user.team_id);
       if (found) setSelectedTeam(found);
     }
+
+    // Load user preferences from Supabase PostgreSQL
+    const targetUserId = user.user_id || user.id;
+    if (supabaseStatus.isConfigured && targetUserId && targetUserId.length > 20) {
+      const prefs = await preferenceService.getPreferences(targetUserId);
+      if (prefs) {
+        if (prefs.active_tab) setActiveTabState(prefs.active_tab);
+        if (prefs.sidebar_collapsed !== undefined) setIsCollapsedState(Boolean(prefs.sidebar_collapsed));
+      }
+    }
   };
 
   const handleLogout = async () => {
-    await apiAuth.signOut();
-    setCurrentUser(null);
     setIsAuthenticated(false);
+    setCurrentUser(null);
+    if (supabaseStatus.isConfigured) {
+      await apiAuth.signOut();
+    }
   };
 
-  const handleUpdateUserProfile = ({ userId, team_id, team_name, role, full_name, job_title }) => {
-    // Update currentUser ONLY if the user being updated is the currently logged-in user
-    setCurrentUser(prev => {
-      const isTargetLoggedInUser = (prev?.id === userId || prev?.user_id === userId);
-      if (isTargetLoggedInUser) {
-        const next = {
-          ...prev,
-          ...(team_id !== undefined && { team_id }),
-          ...(team_name !== undefined && { team_name }),
-          ...(role !== undefined && { role }),
-          ...(full_name !== undefined && { full_name }),
-          ...(job_title !== undefined && { job_title })
-        };
-        return next;
+  const handleUpdateUserProfile = async (updatedFields) => {
+    const nextUser = { ...currentUser, ...updatedFields };
+    setCurrentUser(nextUser);
+
+    if (supabaseStatus.isConfigured && currentUser?.id) {
+      if (updatedFields.role) {
+        await apiAuth.updateProfileRole(currentUser.id, updatedFields.role);
       }
-      return prev;
-    });
+      if (updatedFields.team_id) {
+        await apiAuth.updateProfileTeam(currentUser.id, updatedFields.team_id);
+      }
+    }
   };
 
-  // Task Actions (attaches created_by)
+  // Task Actions
   const handleAddTask = async (newTask) => {
-    const taskWithAuthor = {
-      ...newTask,
-      created_by: currentUser?.user_id || currentUser?.id || null
-    };
-    setTasks(prev => [taskWithAuthor, ...prev]);
     if (supabaseStatus.isConfigured) {
-      await taskService.create(taskWithAuthor);
+      try {
+        await taskService.create(newTask);
+      } catch (err) {
+        console.warn("Error creating task in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setTasks(prev => [ { ...newTask, id: Date.now().toString() }, ...prev]);
+      await refreshDashboardMetrics();
     }
-    refreshDashboardMetrics();
   };
 
-  const handleUpdateTaskStatus = async (id, newStatus) => {
-    const foundTask = tasks.find(t => t.id === id);
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
+  const handleUpdateTaskStatus = async (taskId, newStatus) => {
+    const targetTask = tasks.find(t => t.id === taskId);
     if (supabaseStatus.isConfigured) {
-      await taskService.updateStatus(id, newStatus, foundTask?.title || 'Task');
+      try {
+        await taskService.updateStatus(taskId, newStatus, targetTask?.title || 'Task');
+      } catch (err) {
+        console.warn("Error updating task status in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+      await refreshDashboardMetrics();
     }
-    refreshDashboardMetrics();
   };
 
-  const handleEditTask = async (id, updatedFields) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updatedFields } : t));
-    if (supabaseStatus.isConfigured && updatedFields.status) {
-      await taskService.updateStatus(id, updatedFields.status, updatedFields.title || 'Task');
-    }
-    refreshDashboardMetrics();
-  };
-
-  const handleDeleteTask = async (id) => {
-    setTasks(prev => prev.filter(t => t.id !== id));
+  const handleEditTask = async (taskId, updatedTaskData) => {
+    const normStatus = taskService.normalizeStatus(updatedTaskData.status);
     if (supabaseStatus.isConfigured) {
-      await taskService.delete(id);
+      try {
+        await apiTasks.updateStatus(taskId, normStatus);
+      } catch (err) {
+        console.warn("Error editing task in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updatedTaskData } : t));
+      await refreshDashboardMetrics();
     }
-    refreshDashboardMetrics();
   };
 
-  // Company Actions (attaches created_by)
+  const handleDeleteTask = async (taskId) => {
+    if (supabaseStatus.isConfigured) {
+      try {
+        await taskService.delete(taskId);
+      } catch (err) {
+        console.warn("Error deleting task in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+      await refreshDashboardMetrics();
+    }
+  };
+
+  // Company Actions
   const handleAddCompany = async (newCompany) => {
-    const companyWithAuthor = {
-      ...newCompany,
-      created_by: currentUser?.user_id || currentUser?.id || null
-    };
-    setCompanies(prev => [companyWithAuthor, ...prev]);
     if (supabaseStatus.isConfigured) {
-      await companyService.create(companyWithAuthor);
+      try {
+        await companyService.create(newCompany);
+      } catch (err) {
+        console.warn("Error creating company in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      const localCompany = { ...newCompany, id: Date.now().toString() };
+      setCompanies(prev => [localCompany, ...prev]);
+      await refreshDashboardMetrics();
     }
-    refreshDashboardMetrics();
   };
 
   const handleEditCompany = async (id, updatedFields) => {
-    setCompanies(prev => prev.map(c => c.id === id ? { ...c, ...updatedFields } : c));
     if (supabaseStatus.isConfigured) {
-      await companyService.update(id, updatedFields);
+      try {
+        await companyService.update(id, updatedFields);
+      } catch (err) {
+        console.warn("Error updating company in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setCompanies(prev => prev.map(c => c.id === id ? { ...c, ...updatedFields } : c));
+      await refreshDashboardMetrics();
     }
-    refreshDashboardMetrics();
   };
 
   const handleDeleteCompany = async (id) => {
-    setCompanies(prev => prev.filter(c => c.id !== id));
     if (supabaseStatus.isConfigured) {
-      await companyService.delete(id);
+      try {
+        await companyService.delete(id);
+      } catch (err) {
+        console.warn("Error deleting company in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setCompanies(prev => prev.filter(c => c.id !== id));
+      await refreshDashboardMetrics();
     }
-    refreshDashboardMetrics();
   };
 
   const handleSetFeaturedCompany = async (id) => {
-    setCompanies(prev => prev.map(c => ({
-      ...c,
-      is_featured: c.id === id,
-      status: c.id === id ? 'Featured' : 'Active'
-    })));
     if (supabaseStatus.isConfigured) {
-      await companyService.setFeatured(id);
+      try {
+        await companyService.setFeatured(id);
+      } catch (err) {
+        console.warn("Error setting featured company in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setCompanies(prev => prev.map(c => ({
+        ...c,
+        is_featured: c.id === id,
+        status: c.id === id ? 'Featured' : 'Active'
+      })));
+      await refreshDashboardMetrics();
     }
-    refreshDashboardMetrics();
   };
 
-  // Contact Actions (attaches created_by)
+  // Contact Actions
   const handleAddContact = async (newContact) => {
-    const contactWithAuthor = {
-      ...newContact,
-      created_by: currentUser?.user_id || currentUser?.id || null
-    };
-    setContacts(prev => [contactWithAuthor, ...prev]);
     if (supabaseStatus.isConfigured) {
-      await contactService.create(contactWithAuthor);
+      try {
+        await contactService.create(newContact);
+      } catch (err) {
+        console.warn("Error creating contact in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setContacts(prev => [ { ...newContact, id: Date.now().toString() }, ...prev]);
     }
   };
 
   const handleDeleteContact = async (id) => {
-    setContacts(prev => prev.filter(c => c.id !== id));
     if (supabaseStatus.isConfigured) {
-      await contactService.delete(id);
+      try {
+        await contactService.delete(id);
+      } catch (err) {
+        console.warn("Error deleting contact in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setContacts(prev => prev.filter(c => c.id !== id));
     }
   };
 
-  // Note Actions (attaches created_by)
+  // Note Actions
   const handleAddNote = async (newNote) => {
-    const noteWithAuthor = {
-      ...newNote,
-      created_by: currentUser?.user_id || currentUser?.id || null
-    };
-    setNotes(prev => [noteWithAuthor, ...prev]);
     if (supabaseStatus.isConfigured) {
-      await noteService.create(noteWithAuthor);
+      try {
+        await noteService.create(newNote);
+      } catch (err) {
+        console.warn("Error creating note in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setNotes(prev => [ { ...newNote, id: Date.now().toString() }, ...prev]);
     }
   };
 
   const handleDeleteNote = async (id) => {
-    setNotes(prev => prev.filter(n => n.id !== id));
     if (supabaseStatus.isConfigured) {
-      await noteService.delete(id);
+      try {
+        await noteService.delete(id);
+      } catch (err) {
+        console.warn("Error deleting note in Supabase:", err.message);
+      }
+      await loadMasterSupabaseData();
+    } else {
+      setNotes(prev => prev.filter(n => n.id !== id));
     }
   };
 
@@ -364,28 +470,12 @@ export default function App() {
       const agg = await dashboardService.fetchAggregatedMetrics();
       setDashboardData(agg);
     } else {
-      // Local dynamic recalculation for unconfigured mode
-      const completedTasksCount = tasks.filter(t => t.status === 'Completed' || t.status === 'Done').length;
-      const totalTasksCount = tasks.length || 1;
-      const taskProgressPercentage = Math.round((completedTasksCount / totalTasksCount) * 100);
+      // Dynamic recalculation
+      const completedTasksCount = tasks.filter(t => t.status === 'Completed' || t.status === 'Done' || t.status === 'completed' || t.status === 'done').length;
+      const totalTasksCount = tasks.length;
+      const taskProgressPercentage = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
 
-      const activeFeaturedCompany = companies.find(c => c.is_featured || c.status === 'Featured') || companies[0] || {
-        name: 'Product design',
-        category: 'Web Design',
-        transactions: '1,641'
-      };
-
-      const parseAmount = (valStr) => {
-        if (!valStr) return 0;
-        const cleaned = valStr.toString().replace(/[^0-9.]/g, '');
-        return parseFloat(cleaned) || 0;
-      };
-
-      const sumExpenses = companies.reduce((acc, c) => acc + parseAmount(c.expenses || '$2,100'), 0) + 8414;
-      const sumRevenues = companies.reduce((acc, c) => acc + parseAmount(c.revenue || '$15,000'), 0) + 56123;
-
-      const totalRevK = Math.round(sumRevenues / 1000);
-      const totalExpK = Math.round(sumExpenses / 1000);
+      const activeFeaturedCompany = companies.find(c => c.is_featured || c.status === 'Featured') || companies[0] || null;
 
       setDashboardData(prev => ({
         ...prev,
@@ -393,36 +483,28 @@ export default function App() {
           completed: completedTasksCount,
           total: totalTasksCount,
           percentage: taskProgressPercentage,
-          month: 'This Month (2026)',
+          month: 'This Month',
         },
         totalExpenses: {
           ...prev.totalExpenses,
-          amount: sumExpenses,
-          formatted: `$${Math.round(sumExpenses).toLocaleString()}`
-        },
-        averageFinishedTask: {
-          ...prev.averageFinishedTask,
-          average: `± ${completedTasksCount} Task`
-        },
-        taskSummaries: {
-          ...prev.taskSummaries,
-          totalTasks: `${totalTasksCount} Task`
+          amount: 0,
+          formatted: '$0'
         },
         totalRevenue: {
           ...prev.totalRevenue,
-          amountFormatted: `$${totalRevK.toLocaleString()}k`
+          amountFormatted: '$0k'
         },
         expensesAllocation: {
           ...prev.expensesAllocation,
-          amountFormatted: `$${totalExpK.toLocaleString()}k`
+          amountFormatted: '$0k'
         },
         highlightedCompany: {
-          name: activeFeaturedCompany.name,
-          category: activeFeaturedCompany.category,
-          totalTransactions: activeFeaturedCompany.transactions || '1,641',
-          formattedTransactions: activeFeaturedCompany.transactions || '1,641',
-          logo_bg: activeFeaturedCompany.logo_bg || 'bg-[#d94e34]',
-          sparkline: [3, 8, 4, 9, 2, 7, 3, 10, 5, 8, 2, 5]
+          name: activeFeaturedCompany ? activeFeaturedCompany.name : 'No Company Available',
+          category: activeFeaturedCompany ? (activeFeaturedCompany.category || 'General') : 'General',
+          totalTransactions: activeFeaturedCompany ? (activeFeaturedCompany.transactions || '0') : '0',
+          formattedTransactions: activeFeaturedCompany ? (activeFeaturedCompany.transactions || '0') : '0',
+          logo_bg: activeFeaturedCompany ? (activeFeaturedCompany.logo_bg || 'bg-black') : 'bg-gray-300',
+          sparkline: []
         },
         completedTasksCount: completedTasksCount
       }));
@@ -508,7 +590,7 @@ export default function App() {
           )}
 
           {activeTab === 'calendars' && (
-            <CalendarView currentUser={currentUser} />
+            <CalendarView />
           )}
 
           {activeTab === 'analytics' && (

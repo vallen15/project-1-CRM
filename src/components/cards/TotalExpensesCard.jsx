@@ -3,19 +3,14 @@ import { TrendingUp } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, Tooltip } from 'recharts';
 
 export default function TotalExpensesCard({ data }) {
-  const sparklineData = data?.sparkline || [
-    { value: 4000 },
-    { value: 7500 },
-    { value: 3000 },
-    { value: 6200 },
-    { value: 5100 },
-    { value: 8414 },
+  const sparklineData = data?.sparkline && data.sparkline.length > 0 ? data.sparkline : [
+    { value: 0 }, { value: 0 }
   ];
 
-  const defaultFormatted = data?.formatted || '$8,414';
+  const defaultFormatted = data?.formatted || '$0';
   const [hoverValue, setHoverValue] = useState(null);
 
-  const displayAmount = hoverValue ? `$${hoverValue.toLocaleString()}` : defaultFormatted;
+  const displayAmount = hoverValue !== null ? `$${hoverValue.toLocaleString()}` : defaultFormatted;
 
   return (
     <div className="bg-white rounded-xl p-5 border border-gray-200/80 shadow-2xs flex items-center justify-between font-sans">
@@ -54,11 +49,11 @@ export default function TotalExpensesCard({ data }) {
           </h3>
           <span className="inline-flex items-center gap-0.5 bg-[#e6f4ea] text-[#137333] text-[10px] font-bold px-1.5 py-0.5 rounded-full">
             <TrendingUp className="w-3 h-3" />
-            {data?.growth || 12}%
+            {data?.growth || 0}%
           </span>
         </div>
         <span className="text-[11px] font-medium text-gray-400 mt-0.5 block">
-          {hoverValue ? 'Selected Point' : (data?.month || 'This Month')}
+          {hoverValue !== null ? 'Selected Point' : (data?.month || 'This Month')}
         </span>
       </div>
     </div>

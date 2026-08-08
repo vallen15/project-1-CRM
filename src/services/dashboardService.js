@@ -1,42 +1,50 @@
-import { apiTasks, apiCompanies, apiExpenses, apiRevenues } from '../lib/supabase';
+import { apiTasks, apiCompanies, apiExpenses, apiRevenues, apiTransactions } from '../lib/supabase';
 import { initialDashboardData } from '../lib/initialData';
 
 export const dashboardService = {
   async fetchAggregatedMetrics() {
     try {
-      const [tasks, companies, expenses, revenues] = await Promise.all([
+      const [tasks, companies, expenses, revenues, transactions] = await Promise.all([
         apiTasks.fetchAll(),
         apiCompanies.fetchAll(),
         apiExpenses.fetchAll(),
-        apiRevenues.fetchAll()
+        apiRevenues.fetchAll(),
+        apiTransactions ? apiTransactions.fetchAll() : Promise.resolve([])
       ]);
 
       const validTasks = tasks || [];
       const validCompanies = companies || [];
       const validExpenses = expenses || [];
       const validRevenues = revenues || [];
+      const validTransactions = transactions || [];
 
-      // 1. Task Metrics 100% Dynamic Aggregation from Supabase Tasks Database
-      const completedTasksCount = validTasks.filter(t => t.status === 'Completed' || t.status === 'Done').length;
+      // 1. TASK METRICS (Pours directly from Supabase `tasks` table)
       const totalTasksCount = validTasks.length;
-      const taskProgressPercentage = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+      const completedTasksCount = validTasks.filter(t => {
+        const s = (t.status || '').toLowerCase();
+        return s === 'completed' || s === 'done';
+      }).length;
 
-      // 2. Highlighted Company Selection
-      const featuredCompany = validCompanies.find(c => c.is_featured || c.status === 'Featured') || validCompanies[0] || {
-        name: 'Product design',
-        category: 'Web Design',
-        transactions: '1,641',
-        logo_bg: 'bg-[#d94e34]'
-      };
+      const taskProgressPercentage = totalTasksCount > 0
+        ? Math.round((completedTasksCount / totalTasksCount) * 100)
+        : 0;
 
-      // 3. Financial Totals Aggregation
+      const avgFinishedCount = Math.round(completedTasksCount / 4);
+
+      // 2. HIGHLIGHTED COMPANY (Derived dynamically from Supabase `companies` table)
+      const featuredCompany = validCompanies.find(c => c.is_featured || (c.status || '').toLowerCase() === 'featured') || validCompanies[0] || null;
+
+      const featuredTxCount = featuredCompany
+        ? (validTransactions.filter(tx => tx.company_id === featuredCompany.id).length || featuredCompany.total_transactions || 0)
+        : 0;
+
+      // 3. FINANCIAL TOTALS (Pours directly from Supabase `expenses` & `revenues` tables)
       const sumExpenses = validExpenses.reduce((acc, e) => acc + (parseFloat(e.amount) || 0), 0);
-      const monthlyExpenseAmount = sumExpenses > 0 ? sumExpenses : 8414;
-
       const sumRevenues = validRevenues.reduce((acc, r) => acc + (parseFloat(r.amount) || 0), 0);
-      const totalRevenueK = sumRevenues > 0 ? Math.round(sumRevenues / 1000) : 56;
 
-      // 4. Expenses Allocation Categories
+      const totalRevenueK = sumRevenues > 0 ? Math.round(sumRevenues / 1000) : 0;
+
+      // 4. EXPENSES ALLOCATION CATEGORIES (Pours directly from Supabase `expenses` table)
       const categoriesMap = {
         Production: 0,
         Marketing: 0,
@@ -46,22 +54,23 @@ export const dashboardService = {
 
       validExpenses.forEach(e => {
         let cat = 'Operational';
-        if (e.category_id === 'e1111111-1111-1111-1111-111111111111' || (e.category && e.category.includes('Prod'))) cat = 'Production';
-        else if (e.category_id === 'e2222222-2222-2222-2222-222222222222' || (e.category && e.category.includes('Mark'))) cat = 'Marketing';
-        else if (e.category_id === 'e3333333-3333-3333-3333-333333333333' || (e.category && e.category.includes('Oper'))) cat = 'Operational';
-        else if (e.category_id === 'e4444444-4444-4444-4444-444444444444' || (e.category && e.category.includes('Desi'))) cat = 'Design';
+        if (e.category_id === 'e1111111-1111-1111-1111-111111111111') cat = 'Production';
+        else if (e.category_id === 'e2222222-2222-2222-2222-222222222222') cat = 'Marketing';
+        else if (e.category_id === 'e3333333-3333-3333-3333-333333333333') cat = 'Operational';
+        else if (e.category_id === 'e4444444-4444-4444-4444-444444444444') cat = 'Design';
+        else if (e.category_name) cat = e.category_name;
 
         const amt = parseFloat(e.amount) || 0;
-        categoriesMap[cat] += Math.round(amt);
+        categoriesMap[cat] = (categoriesMap[cat] || 0) + Math.round(amt / 1000);
       });
 
       const categoriesList = Object.keys(categoriesMap).map(key => ({
         name: key,
         value: categoriesMap[key],
-        max: Math.max(...Object.values(categoriesMap), 40000)
+        max: Math.max(...Object.values(categoriesMap), 10)
       }));
 
-      const totalAllocationK = Math.round(monthlyExpenseAmount / 1000);
+      const totalAllocationK = Object.values(categoriesMap).reduce((a, b) => a + b, 0);
 
       return {
         ...initialDashboardData,
@@ -72,39 +81,32 @@ export const dashboardService = {
           month: 'This Month',
         },
         totalExpenses: {
-          amount: monthlyExpenseAmount,
-          formatted: `$${Math.round(monthlyExpenseAmount).toLocaleString()}`,
-          growth: 12,
+          amount: sumExpenses,
+          formatted: `$${Math.round(sumExpenses).toLocaleString()}`,
+          growth: 0,
           month: 'This Month',
-          sparkline: [
-            { value: 4000 },
-            { value: 7500 },
-            { value: 3000 },
-            { value: 6200 },
-            { value: 5100 },
-            { value: Math.round(monthlyExpenseAmount) }
-          ]
+          sparkline: []
         },
         averageFinishedTask: {
           ...initialDashboardData.averageFinishedTask,
-          average: `± ${completedTasksCount} Task`
+          average: `± ${avgFinishedCount} Task`
         },
         taskSummaries: {
           ...initialDashboardData.taskSummaries,
           totalTasks: `${totalTasksCount} Task`
         },
         highlightedCompany: {
-          name: featuredCompany.name,
-          category: featuredCompany.category,
-          totalTransactions: featuredCompany.total_transactions || featuredCompany.transactions || '1,641',
-          formattedTransactions: featuredCompany.total_transactions || featuredCompany.transactions || '1,641',
-          logo_bg: featuredCompany.logo_bg || 'bg-[#d94e34]',
-          sparkline: [3, 8, 4, 9, 2, 7, 3, 10, 5, 8, 2, 5]
+          name: featuredCompany ? featuredCompany.name : 'No Company Available',
+          category: featuredCompany ? (featuredCompany.category || 'General') : 'General',
+          totalTransactions: featuredTxCount,
+          formattedTransactions: featuredTxCount.toLocaleString(),
+          logo_bg: featuredCompany ? (featuredCompany.logo_bg || 'bg-black') : 'bg-gray-300',
+          sparkline: []
         },
         totalRevenue: {
           ...initialDashboardData.totalRevenue,
           amountFormatted: `$${totalRevenueK.toLocaleString()}k`,
-          growth: 12
+          growth: 0
         },
         expensesAllocation: {
           ...initialDashboardData.expensesAllocation,

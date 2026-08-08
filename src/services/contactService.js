@@ -6,7 +6,14 @@ export const contactService = {
   },
 
   async create(contactData) {
-    return await apiContacts.insert(contactData);
+    const cleanContact = {
+      name: contactData.name,
+      email: contactData.email,
+      role: contactData.role || contactData.position || 'Member',
+      company_name: contactData.company || contactData.company_name || null
+    };
+
+    return await apiContacts.insert(cleanContact);
   },
 
   async delete(id) {

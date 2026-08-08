@@ -8,36 +8,7 @@ export default function NotificationsView({ currentUser }) {
 
   const currentEmail = currentUser?.email || 'admin@gmail.com';
   
-  const initialNotifications = [
-    {
-      id: '1',
-      title: 'New Task Assigned',
-      message: 'John Doe assigned you to "Design New Landing Page V2"',
-      type: 'task',
-      read: false,
-      time: '10 mins ago',
-      target_email: 'john.d@company.com'
-    },
-    {
-      id: '2',
-      title: 'Supabase Database Sync',
-      message: 'Database schema 6.0 active and synced with cloud project',
-      type: 'system',
-      read: false,
-      time: '1 hour ago',
-    },
-    {
-      id: '3',
-      title: 'Design Sprint Note Added',
-      message: 'Sarah Connor added a new note to Q3 Marketing Campaign',
-      type: 'note',
-      read: true,
-      time: '3 hours ago',
-      target_email: 'admin@gmail.com'
-    },
-  ];
-
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     loadNotifications();
@@ -46,19 +17,17 @@ export default function NotificationsView({ currentUser }) {
   const loadNotifications = async () => {
     try {
       const data = await notificationService.fetchAll();
-      if (data && data.length > 0) {
-        setNotifications(data.map(n => ({
-          id: n.id,
-          title: n.title,
-          message: n.message,
-          type: n.type || 'system',
-          read: n.is_read || n.read || false,
-          time: n.created_at?.split('T')[0] || 'Just now',
-          target_email: n.target_email || null
-        })));
-      }
+      setNotifications((data || []).map(n => ({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        type: n.type || 'system',
+        read: n.is_read || n.read || false,
+        time: n.created_at?.split('T')[0] || 'Just now',
+        target_email: n.target_email || null
+      })));
     } catch (err) {
-      console.warn("Notifications service fetch fallback:", err.message);
+      console.warn("Error loading notifications:", err.message);
     }
   };
 

@@ -1,16 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, MapPin, X, Check, RotateCcw, User } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, MapPin, X, Check, RotateCcw, Trash2 } from 'lucide-react';
 import { calendarService } from '../../services/calendarService';
 
-export default function CalendarView({ currentUser }) {
+export default function CalendarView() {
   // Real Date Engine (defaults to August 2026 target period)
   const [currentDate, setCurrentDate] = useState(new Date(2026, 7, 8)); // Month is 0-indexed (7 = August)
   const [selectedDay, setSelectedDay] = useState(8);
   const [showAddEventModal, setShowAddEventModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  const currentEmail = currentUser?.email || 'admin@gmail.com';
-  const isAdmin = (currentUser?.role || currentUser?.user_metadata?.role || '').toLowerCase() === 'admin';
 
   const realToday = new Date();
   const year = currentDate.getFullYear();
@@ -19,15 +16,7 @@ export default function CalendarView({ currentUser }) {
   const monthName = currentDate.toLocaleDateString('en-US', { month: 'long' });
   const monthYearLabel = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const [events, setEvents] = useState([
-    { id: '1', title: 'Design Landing Page Review', day: 1, month: 7, year: 2026, date: '2026-08-01', team: 'Design Teams', time: '10:00 AM - 11:30 AM', type: 'Meeting', user_email: 'john.d@company.com' },
-    { id: '2', title: 'Marketing Campaign Launch', day: 4, month: 7, year: 2026, date: '2026-08-04', team: 'Marketing Teams', time: '02:00 PM - 03:00 PM', type: 'Event', user_email: 'sarah@acme.org' },
-    { id: '3', title: 'Server Infrastructure Maintenance', day: 5, month: 7, year: 2026, date: '2026-08-05', team: 'Production Teams', time: '09:00 AM - 10:00 AM', type: 'Task', user_email: 'alex@techlabs.io' },
-    { id: '4', title: 'Supabase Database Indexing & Audit', day: 7, month: 7, year: 2026, date: '2026-08-07', team: 'Production Teams', time: '04:00 PM - 05:00 PM', type: 'Task', user_email: 'admin@gmail.com' },
-    { id: '5', title: 'Real-Time Sync & Team Standup', day: 8, month: 7, year: 2026, date: '2026-08-08', team: 'Management', time: '10:00 AM - 11:00 AM', type: 'Meeting', user_email: 'admin@gmail.com' },
-    { id: '6', title: 'Q3 Product Roadmap Planning', day: 15, month: 8, year: 2026, date: '2026-09-15', team: 'Marketing Teams', time: '01:00 PM - 02:30 PM', type: 'Meeting', user_email: 'john.d@company.com' },
-    { id: '7', title: 'Security Patch & Infrastructure Upgrade', day: 10, month: 6, year: 2026, date: '2026-07-10', team: 'Production Teams', time: '11:00 AM - 12:00 PM', type: 'Task', user_email: 'alex@techlabs.io' },
-  ]);
+  const [events, setEvents] = useState([]);
 
   const [newTitle, setNewTitle] = useState('');
   const [newDay, setNewDay] = useState(8);
@@ -42,22 +31,24 @@ export default function CalendarView({ currentUser }) {
     setIsLoading(true);
     try {
       const unified = await calendarService.fetchUnifiedCalendarEvents();
-      if (unified && unified.length > 0) {
-        setEvents(unified);
-      }
+      setEvents(unified || []);
     } catch (err) {
-      console.warn("Unified calendar service fallback:", err.message);
+      console.warn("Unified calendar service error:", err.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // STRICT PER-ACCOUNT CALENDAR EVENT ISOLATION ENGINE
-  const userEvents = events.filter(e => {
-    if (!e.user_email) return true; // Global team event
-    if (isAdmin) return true; // Admin can view all calendar agendas
-    return e.user_email.toLowerCase() === currentEmail.toLowerCase();
-  });
+  const handleDeleteEvent = async (id, e) => {
+    e?.stopPropagation();
+    setEvents(prev => prev.filter(ev => ev.id !== id));
+    try {
+      await calendarService.deleteEvent(id);
+      await loadUnifiedEvents();
+    } catch (err) {
+      console.warn("Error deleting calendar event:", err.message);
+    }
+  };
 
   // DYNAMIC CALENDAR GRID ENGINE FOR ANY MONTH AND YEAR
   const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 = Sunday, 1 = Monday...
@@ -98,9 +89,7 @@ export default function CalendarView({ currentUser }) {
       date: dateStr,
       team: newTeam,
       time: newTime,
-      type: 'Meeting',
-      user_email: currentEmail,
-      created_by: currentUser?.id || currentUser?.user_id || null
+      type: 'Meeting'
     };
 
     setEvents(prev => [...prev, newEv]);
@@ -116,7 +105,7 @@ export default function CalendarView({ currentUser }) {
   };
 
   // Filter events for the currently selected day & month
-  const selectedEvents = userEvents.filter(e => {
+  const selectedEvents = events.filter(e => {
     if (e.date) {
       const formattedMonth = (month + 1) < 10 ? `0${month + 1}` : `${month + 1}`;
       const formattedDay = selectedDay < 10 ? `0${selectedDay}` : `${selectedDay}`;
@@ -133,13 +122,13 @@ export default function CalendarView({ currentUser }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Personal & Team Calendar</h1>
-            <span className="bg-black text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-              <User className="w-3 h-3 text-emerald-400" />
-              {currentEmail}
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Full Interactive Calendar</h1>
+            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+              Multi-Month Engine
             </span>
           </div>
-          <p className="text-xs text-gray-500 font-medium">Per-account isolated schedule events and task due dates</p>
+          <p className="text-xs text-gray-500 font-medium">Navigate through any month and year to manage schedule deadlines</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -212,7 +201,7 @@ export default function CalendarView({ currentUser }) {
               const formattedDay = d < 10 ? `0${d}` : `${d}`;
               const targetDateStr = `${year}-${formattedMonth}-${formattedDay}`;
 
-              const dayEvents = userEvents.filter(e => {
+              const dayEvents = events.filter(e => {
                 if (e.date) return e.date === targetDateStr;
                 return e.day === d && (e.month === undefined || e.month === month);
               });
@@ -264,7 +253,7 @@ export default function CalendarView({ currentUser }) {
         <div className="lg:col-span-4 bg-white rounded-2xl p-6 border border-gray-200 shadow-2xs flex flex-col justify-between">
           <div>
             <div className="border-b border-gray-100 pb-4 mb-4">
-              <span className="text-xs font-semibold text-gray-400 block mb-1">Agenda for {currentEmail}</span>
+              <span className="text-xs font-semibold text-gray-400 block mb-1">Agenda for</span>
               <h3 className="text-xl font-bold text-gray-900">
                 {monthName} {selectedDay}, {year}
               </h3>
@@ -278,11 +267,20 @@ export default function CalendarView({ currentUser }) {
                       <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full inline-block ${getEventBadge(ev.team)}`}>
                         {ev.team}
                       </span>
-                      {ev.user_email && (
-                        <span className="text-[9px] font-mono text-gray-400">
-                          {ev.user_email}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {ev.isTask && (
+                          <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 rounded">
+                            Unified Task
+                          </span>
+                        )}
+                        <button
+                          onClick={(e) => handleDeleteEvent(ev.id, e)}
+                          title="Delete event"
+                          className="p-1 text-gray-400 hover:text-rose-600 rounded transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <h4 className="text-xs font-bold text-gray-900">{ev.title}</h4>
                     <div className="flex items-center gap-1 text-[11px] text-gray-500 font-medium">
@@ -293,7 +291,7 @@ export default function CalendarView({ currentUser }) {
                 ))
               ) : (
                 <div className="py-8 text-center text-gray-400 text-xs font-medium">
-                  No events scheduled for {currentEmail} on {monthName} {selectedDay}, {year}.
+                  No events or due tasks scheduled for {monthName} {selectedDay}, {year}.
                 </div>
               )}
             </div>
@@ -313,7 +311,7 @@ export default function CalendarView({ currentUser }) {
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-gray-900">Schedule Event for {currentEmail}</h3>
+              <h3 className="text-base font-bold text-gray-900">Schedule New Event</h3>
               <button onClick={() => setShowAddEventModal(false)} className="text-gray-400 hover:text-black">
                 <X className="w-4 h-4" />
               </button>

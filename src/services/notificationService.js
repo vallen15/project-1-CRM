@@ -35,5 +35,25 @@ export const notificationService = {
     } catch (e) {
       console.warn("insert notification fallback:", e.message);
     }
+  },
+
+  async delete(id) {
+    try {
+      if (apiNotifications.delete) {
+        return await apiNotifications.delete(id);
+      }
+    } catch (e) {
+      console.warn("delete notification fallback:", e.message);
+    }
+  },
+
+  async deleteByReference(referenceType, referenceId) {
+    try {
+      if (apiNotifications.deleteByReference) {
+        return await apiNotifications.deleteByReference(referenceType, referenceId);
+      }
+    } catch (e) {
+      console.warn("deleteByReference notification fallback:", e.message);
+    }
   }
 };

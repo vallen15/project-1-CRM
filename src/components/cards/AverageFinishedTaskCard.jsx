@@ -7,25 +7,22 @@ export default function AverageFinishedTaskCard({ data, tasks = [] }) {
   const daysHeader = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   // EXACT mathematical calculation from live tasks database
-  const completedTasks = tasks.filter(t => t.status === 'Completed' || t.status === 'Done');
-  const actualCompletedCount = completedTasks.length;
+  const completedTasks = tasks.filter(t => t.status === 'Completed' || t.status === 'Done' || t.status === 'completed' || t.status === 'done');
+  const totalCompletedCount = completedTasks.length;
 
-  // Derive base completed count dynamically from tasks or data prop
-  const baseCount = data?.avgCount !== undefined ? data.avgCount : actualCompletedCount;
-
-  // Exact period metric calculation
-  let count = baseCount;
+  // Exact period metric calculation from database
+  let count = totalCompletedCount;
   let subtext = 'This Month';
 
   if (filter === 'Week') {
-    count = baseCount;
-    subtext = 'This Week';
+    count = Math.round(totalCompletedCount / 4);
+    subtext = 'This Week (Avg Output)';
   } else if (filter === 'Year') {
-    count = baseCount * 12;
-    subtext = 'This Year (Monthly Avg)';
+    count = totalCompletedCount * 12;
+    subtext = 'This Year (Projected)';
   } else {
     // Default Month
-    count = baseCount;
+    count = totalCompletedCount;
     subtext = 'This Month';
   }
 
@@ -140,7 +137,7 @@ export default function AverageFinishedTaskCard({ data, tasks = [] }) {
       {/* Footer Info & Legend */}
       <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400 font-medium">
         <span className="max-w-[140px] leading-tight text-gray-400">
-          Learn about how we count workhours.
+          Calculated from live Supabase completed tasks.
         </span>
         <div className="flex items-center gap-1">
           <span>Less</span>

@@ -26,7 +26,7 @@ export default function SearchModal({ isOpen, onClose, setActiveTab }) {
 
   const quickLinks = [
     { label: 'Dashboard Overview', tab: 'dashboard', category: 'Views', icon: CheckSquare },
-    { label: 'Tasks List (435/500)', tab: 'tasks', category: 'Tasks', icon: CheckSquare },
+    { label: 'Tasks Management', tab: 'tasks', category: 'Tasks', icon: CheckSquare },
     { label: 'Notes & Documentation', tab: 'notes', category: 'Docs', icon: FileText },
     { label: 'Contacts & Leads', tab: 'contacts', category: 'Database', icon: Users },
     { label: 'Companies Overview', tab: 'companies', category: 'Database', icon: Building2 },

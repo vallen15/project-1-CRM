@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Mail, Send, Star, Trash2, Search, Plus, X, Paperclip, Reply, ArrowLeft, UserCheck } from 'lucide-react';
 import { emailService } from '../../services/emailService';
 import { notificationService } from '../../services/notificationService';
+import { preferenceService } from '../../services/preferenceService';
 
 export default function EmailsView({ activeTab, setActiveTab, currentUser }) {
   const initialFolder = activeTab === 'sent' ? 'sent' : 'inbox';
@@ -24,62 +25,7 @@ export default function EmailsView({ activeTab, setActiveTab, currentUser }) {
     }
   }, [activeTab]);
 
-  const initialEmails = [
-    {
-      id: '1',
-      folder: 'inbox',
-      sender: 'Sarah Connor',
-      email: 'sarah@acme.org',
-      recipient: 'john.d@company.com',
-      subject: 'Q3 Product Design Proposal & Timeline',
-      snippet: 'Hi John, I reviewed the latest design mockups for Product Design...',
-      body: `Hi John,\n\nI reviewed the latest design mockups for Product Design. We would like to schedule a call on Monday to discuss the rollout schedule and Supabase database indexing setup.\n\nBest regards,\nSarah Connor\nProduct Manager | Acme Corp`,
-      date: '2026-08-07',
-      starred: true,
-      read: false,
-    },
-    {
-      id: '2',
-      folder: 'inbox',
-      sender: 'System Admin',
-      email: 'admin@gmail.com',
-      recipient: 'john.d@company.com',
-      subject: 'Welcome to System Workspace',
-      snippet: 'Welcome John! Your account has been assigned to Design Team\'s...',
-      body: `Hi John d.,\n\nWelcome to the CRM Workspace. Your account has been assigned to Design Team's by System Administrator.\n\nBest regards,\nSystem Admin`,
-      date: '2026-08-08',
-      starred: false,
-      read: false,
-    },
-    {
-      id: '3',
-      folder: 'sent',
-      sender: 'System Admin',
-      email: 'admin@gmail.com',
-      recipient: 'john.d@company.com',
-      subject: 'Welcome to System Workspace',
-      snippet: 'Welcome John! Your account has been assigned to Design Team\'s...',
-      body: `Hi John d.,\n\nWelcome to the CRM Workspace. Your account has been assigned to Design Team's by System Administrator.\n\nBest regards,\nSystem Admin`,
-      date: '2026-08-08',
-      starred: false,
-      read: true,
-    },
-    {
-      id: '4',
-      folder: 'sent',
-      sender: 'John Doe',
-      email: 'john.d@company.com',
-      recipient: 'sarah@acme.org',
-      subject: 'Re: Q3 Product Design Proposal',
-      snippet: 'Hi Sarah, Thanks for reaching out! Monday 2 PM works great for our team.',
-      body: `Hi Sarah,\n\nThanks for reaching out! Monday 2 PM works great for our team. I will send out the Calendar invite shortly.\n\nBest,\nJohn d.`,
-      date: '2026-08-07',
-      starred: false,
-      read: true,
-    },
-  ];
-
-  const [emails, setEmails] = useState(initialEmails);
+  const [emails, setEmails] = useState([]);
 
   const [to, setTo] = useState('');
   const [subject, setSubject] = useState('');
@@ -92,23 +38,21 @@ export default function EmailsView({ activeTab, setActiveTab, currentUser }) {
   const loadEmails = async () => {
     try {
       const data = await emailService.fetchAll();
-      if (data && data.length > 0) {
-        setEmails(data.map(m => ({
-          id: m.id,
-          folder: m.folder || 'inbox',
-          sender: m.sender || 'Sender',
-          email: m.email || 'user@company.com',
-          recipient: m.recipient || 'Recipient',
-          subject: m.subject || 'Subject',
-          snippet: m.snippet || m.body?.slice(0, 80) || '',
-          body: m.body || '',
-          date: m.created_at?.split('T')[0] || '2026-08-08',
-          starred: m.starred || false,
-          read: m.is_read || m.read || false
-        })));
-      }
+      setEmails((data || []).map(m => ({
+        id: m.id,
+        folder: m.folder || 'inbox',
+        sender: m.sender || 'Sender',
+        email: m.email || 'user@company.com',
+        recipient: m.recipient || 'Recipient',
+        subject: m.subject || 'Subject',
+        snippet: m.snippet || m.body?.slice(0, 80) || '',
+        body: m.body || '',
+        date: m.created_at?.split('T')[0] || '2026-08-08',
+        starred: m.starred || false,
+        read: m.is_read || m.read || false
+      })));
     } catch (err) {
-      console.warn("Email service fetch fallback:", err.message);
+      console.warn("Emails service fetch error:", err.message);
     }
   };
 
@@ -117,22 +61,25 @@ export default function EmailsView({ activeTab, setActiveTab, currentUser }) {
     setEmails(prev => prev.map(m => m.id === id ? { ...m, starred: !m.starred } : m));
   };
 
-  const deleteEmail = (id, e) => {
-    e.stopPropagation();
+  const deleteEmail = async (id, e) => {
+    e?.stopPropagation();
     setEmails(prev => prev.filter(m => m.id !== id));
     if (selectedEmail?.id === id) setSelectedEmail(null);
+    try {
+      await emailService.delete(id);
+    } catch (err) {
+      console.warn("Error deleting email from Supabase:", err.message);
+    }
   };
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
     if (!to.trim() || !subject.trim()) return;
 
     const recipientEmail = to.trim();
     const currentDateStr = new Date().toISOString().split('T')[0];
 
-    // 1. Sent Folder Entry (For Sender)
     const sentMsg = {
-      id: Date.now().toString(),
       folder: 'sent',
       sender: currentName,
       email: currentEmail,
@@ -145,59 +92,29 @@ export default function EmailsView({ activeTab, setActiveTab, currentUser }) {
       read: true,
     };
 
-    // 2. Inbox Folder Entry (For Recipient User)
-    const inboxMsg = {
-      id: (Date.now() + 1).toString(),
-      folder: 'inbox',
-      sender: currentName,
-      email: currentEmail,
-      recipient: recipientEmail,
-      subject: subject.trim(),
-      snippet: message.substring(0, 80) + '...',
-      body: message,
-      date: currentDateStr,
-      starred: false,
-      read: false,
-    };
-
-    // 3. Immediately update local email state
-    setEmails(prev => [sentMsg, inboxMsg, ...prev]);
-
-    // 4. Trigger Automatic In-App Notification for Recipient
-    const newNotification = {
-      id: Date.now().toString(),
-      title: 'New Email Received',
-      message: `${currentName} (${currentEmail}) sent you an email: "${subject.trim()}"`,
-      type: 'email',
-      read: false,
-      time: 'Just now',
-      target_email: recipientEmail
-    };
-
-    notificationService.create(newNotification).catch(err => {
-      console.warn("Background notification create error:", err);
-    });
-
-    // 5. Close compose modal & open sent message in reader pane
     setShowComposeModal(false);
     setTo('');
     setSubject('');
     setMessage('');
-
     setFolder('sent');
-    setSelectedEmail(sentMsg);
     if (setActiveTab) setActiveTab('sent');
 
-    // 6. Send to Supabase PostgreSQL database
-    emailService.sendEmail(sentMsg).catch(err => {
-      console.warn("Background email send service error:", err);
-    });
+    try {
+      await emailService.sendEmail(sentMsg);
+      await loadEmails();
+    } catch (err) {
+      console.warn("Background email send service error:", err.message);
+    }
   };
 
   const handleSwitchFolder = (targetFolder) => {
     setFolder(targetFolder);
     setSelectedEmail(null);
     if (setActiveTab) setActiveTab(targetFolder);
+    const targetUserId = currentUser?.user_id || currentUser?.id;
+    if (targetUserId && targetUserId.length > 20) {
+      preferenceService.updateEmailFolder(targetUserId, targetFolder);
+    }
   };
 
   // PER-USER EMAIL FILTERING ENGINE (Filters emails based on logged-in user email)

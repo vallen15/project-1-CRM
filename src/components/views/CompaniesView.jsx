@@ -72,9 +72,8 @@ export default function CompaniesView({
     if (!name.trim()) return;
 
     onAddCompany({
-      id: Date.now().toString(),
       name: name.trim(),
-      category: category.trim(),
+      category: category.trim() || 'Web Design',
       transactions: transactions.trim() || '1,000',
       revenue: revenue || '$15,000',
       expenses: expenses || '$2,100',
@@ -84,8 +83,8 @@ export default function CompaniesView({
       status: 'Active',
       is_featured: false,
       logo_bg: 'bg-black',
-      team_id: isAdmin ? selectedTeamId : (currentUser?.team_id || 'a2222222-2222-2222-2222-222222222222'),
-      created_by: currentUserId
+      team_id: isAdmin ? selectedTeamId : currentUser?.team_id,
+      created_by: currentUser?.id || currentUser?.user_id
     });
 
     setShowAddCompanyModal(false);

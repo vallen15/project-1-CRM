@@ -1,4 +1,5 @@
 import { apiNotes, apiNotifications } from '../lib/supabase';
+import { notificationService } from './notificationService';
 
 export const noteService = {
   async fetchAll() {
@@ -6,7 +7,12 @@ export const noteService = {
   },
 
   async create(noteData) {
-    const createdNote = await apiNotes.insert(noteData);
+    const cleanNote = {
+      title: noteData.title,
+      content: noteData.content || ''
+    };
+
+    const createdNote = await apiNotes.insert(cleanNote);
 
     // Auto-create notification for new note creation
     try {
@@ -25,6 +31,11 @@ export const noteService = {
   },
 
   async delete(id) {
+    try {
+      await notificationService.deleteByReference('note', id);
+    } catch (e) {
+      console.warn("Notification auto-delete for note notice:", e.message);
+    }
     return await apiNotes.delete(id);
   }
 };
