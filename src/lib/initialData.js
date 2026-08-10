@@ -1,45 +1,60 @@
 export const initialDashboardData = {
   taskProgress: {
-    completed: 0,
-    total: 0,
-    percentage: 0,
+    completed: 435,
+    total: 500,
+    percentage: 64,
     month: 'This Month',
   },
   totalExpenses: {
-    amount: 0,
-    formatted: '$0',
-    growth: 0,
-    sparkline: []
+    amount: 8414,
+    formatted: '$8,414',
+    growth: 12,
+    month: 'This Month',
+    sparkline: [
+      { value: 65 }, { value: 80 }, { value: 50 }, { value: 70 }, { value: 60 }, { value: 75 }, { value: 55 }
+    ]
   },
   averageFinishedTask: {
-    avgCount: 0,
+    average: '± 52 Task',
     month: 'This Month',
     heatmapData: []
   },
   taskSummaries: {
-    total: 0,
-    change: 0,
-    periodLabel: 'Sun - Sat',
+    totalTasks: '126 Task',
+    change: -4,
+    periodLabel: 'Sun, 1 Dec - Sat, 7 Dec',
     dailyBreakdown: []
   },
   highlightedCompany: {
-    name: 'No Company Available',
-    category: 'General',
-    totalTransactions: 0,
-    formattedTransactions: '0',
-    sparkline: []
+    name: 'Product design',
+    category: 'Web Design',
+    totalTransactions: 1641,
+    formattedTransactions: '1,641',
+    logo_bg: 'bg-rose-500',
+    sparkline: [60, 90, 45, 80, 55, 100, 70, 85, 35]
   },
   totalRevenue: {
-    amountFormatted: '$0k',
-    growth: 0,
-    yearlyData: []
+    amountFormatted: '$56,123k',
+    growth: 12,
+    yearlyData: [
+      { year: '2019', revenue: 28 },
+      { year: '2020', revenue: 56 },
+      { year: '2021', revenue: 42 },
+      { year: '2022', revenue: 32 },
+      { year: '2023', revenue: 48 }
+    ]
   },
   expensesAllocation: {
-    amountFormatted: '$0k',
-    growth: 0,
-    categories: []
+    amountFormatted: '$44,171k',
+    growth: 12,
+    categories: [
+      { name: 'Production', value: 12.5, max: 40 },
+      { name: 'Marketing', value: 14.2, max: 40 },
+      { name: 'Operational', value: 22, max: 40 },
+      { name: 'Design', value: 31, max: 40 }
+    ]
   },
-  completedTasksCount: 0,
+  completedTasksCount: 44,
   teams: [
     { id: '11111111-1111-1111-1111-111111111111', name: "Marketing Team's", badge: 'M' },
     { id: '22222222-2222-2222-2222-222222222222', name: "Design Team's", badge: 'D' },

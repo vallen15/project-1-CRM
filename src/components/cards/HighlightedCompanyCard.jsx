@@ -42,14 +42,18 @@ export default function HighlightedCompanyCard({ data }) {
       </div>
 
       {/* Vertical Histogram Bars */}
-      <div className="flex items-end justify-center gap-1.5 h-14 pt-2">
-        {bars.map((h, idx) => (
-          <div
-            key={idx}
-            style={{ height: `${Math.max((h / 10) * 100, 10)}%` }}
-            className={`w-2.5 rounded-[2px] ${idx % 2 === 0 ? 'bg-black' : 'bg-[#4b5563]'}`}
-          />
-        ))}
+      <div className="flex items-end justify-center gap-1.5 h-14 pt-2 overflow-hidden">
+        {bars.map((h, idx) => {
+          const val = typeof h === 'number' ? h : (h?.value || 50);
+          const barHeightPercent = Math.min(Math.max((val <= 10 ? val * 10 : val), 15), 100);
+          return (
+            <div
+              key={idx}
+              style={{ height: `${barHeightPercent}%` }}
+              className={`w-2.5 rounded-[2px] ${idx % 2 === 0 ? 'bg-black' : 'bg-[#4b5563]'}`}
+            />
+          );
+        })}
       </div>
     </div>
   );
