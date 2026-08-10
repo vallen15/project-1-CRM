@@ -306,6 +306,9 @@ export const apiPreferences = {
       if (error) throw error;
       return data ? data[0] : null;
     } catch (err) {
+      if (err.code === '23503' || err.message?.includes('foreign key constraint')) {
+        return null;
+      }
       if (err.message?.includes('email_folder')) {
         delete payload.email_folder;
         try {
@@ -318,7 +321,6 @@ export const apiPreferences = {
           return null;
         }
       }
-      console.warn("apiPreferences.upsert notice:", err.message);
       return null;
     }
   }

@@ -33,6 +33,7 @@ import {
   Line
 } from 'recharts';
 import { analyticsService } from '../../services/analyticsService';
+import { apiRevenues, apiExpenses, apiProfiles } from '../../lib/supabase';
 
 export default function AnalyticsView({
   tasks = [],
@@ -52,16 +53,24 @@ export default function AnalyticsView({
     fetchAnalytics();
   }, [filter, tasks, companies, dashboardData]);
 
-  const fetchAnalytics = () => {
+  const fetchAnalytics = async () => {
     setIsLoading(true);
     setHasError(false);
     try {
+      const [fetchedRevenues, fetchedExpenses, fetchedProfiles] = await Promise.all([
+        apiRevenues.fetchAll().catch(() => []),
+        apiExpenses.fetchAll().catch(() => []),
+        apiProfiles.fetchAll().catch(() => [])
+      ]);
+
       const data = analyticsService.calculateAnalyticsData({
         tasks,
         companies,
+        revenues: fetchedRevenues,
+        expenses: fetchedExpenses,
+        profiles: fetchedProfiles.length > 0 ? fetchedProfiles : profiles,
+        teams: teams.length > 0 ? teams : (dashboardData?.teams || []),
         dashboardData,
-        profiles,
-        teams,
         filter
       });
       setAnalyticsData(data);
